@@ -94,3 +94,12 @@ def test_react_max_steps_forces_final_answer():
     result = agent.run([{"role": "user", "content": "compute"}])
     assert result.answer == "the final answer is 6"
     assert len(result.steps) == 2
+
+
+def test_react_system_prompt_includes_fewshot_example():
+    """system prompt 注入静态 few-shot 轨迹，提升本地小模型对 JSON 契约的遵从度。"""
+    agent = ReactAgent(Settings(), FakeLLM([]), build_default_registry())
+    prompt = agent._system_prompt()
+    assert "12 * 34" in prompt
+    assert '"action": "calculator"' in prompt
+    assert "final_answer" in prompt

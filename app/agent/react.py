@@ -37,6 +37,17 @@ Rules:
 - Think first, then act. Use tools when they help; otherwise answer directly.
 - action_input must be a JSON object whose keys match the tool's parameters.
 - When you are done, output the final_answer form.
+
+{fewshot}
+"""
+
+_FEWSHOT = """\
+Example (reference only; do not echo it verbatim):
+
+User: What is 12 * 34?
+{"thought": "I need to multiply, so I will call the calculator.", "action": "calculator", "action_input": {"expression": "12 * 34"}}
+Observation: 408
+{"thought": "The calculator returned 408.", "final_answer": "12 * 34 = 408"}
 """
 
 
@@ -64,7 +75,7 @@ class ReactAgent(BaseAgent):
     name = "react"
 
     def _system_prompt(self) -> str:
-        return _SYSTEM_TEMPLATE.format(tools=self.tools.render_prompt())
+        return _SYSTEM_TEMPLATE.format(tools=self.tools.render_prompt(), fewshot=_FEWSHOT)
 
     def _messages(self, history: list[dict]) -> list[dict]:
         return [{"role": "system", "content": self._system_prompt()}, *history]

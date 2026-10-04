@@ -62,3 +62,11 @@ def test_function_call_sends_openai_tool_spec():
     assert "calculator" in names and "get_current_time" in names
     assert captured["tools"][0]["type"] == "function"
     assert "parameters" in captured["tools"][0]["function"]
+
+
+def test_function_call_system_prompt_includes_fewshot_hint():
+    """system prompt 注入工具选择的 few-shot 提示。"""
+    agent = FunctionCallAgent(Settings(), FakeToolLLM([]), build_default_registry())
+    prompt = agent._system_prompt()
+    assert "12 * 34" in prompt
+    assert "calculator" in prompt

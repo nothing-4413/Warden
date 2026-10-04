@@ -19,6 +19,14 @@ from .base import AgentRunResult, AgentStep, BaseAgent
 _SYSTEM_TEMPLATE = """\
 You are Warden, an autonomous agent with native function calling.
 Use the provided tools when they help; otherwise answer directly.
+
+{fewshot}
+"""
+
+_FEWSHOT = """\
+Example (reference only): if the user asks "what is 12 * 34?", call the `calculator`
+tool with arguments {"expression": "12 * 34"}, then answer using the returned result.
+If no tool fits the request, answer directly without calling any tool.
 """
 
 _FORCE_FINAL_PROMPT = (
@@ -31,7 +39,7 @@ class FunctionCallAgent(BaseAgent):
     name = "function_call"
 
     def _system_prompt(self) -> str:
-        return _SYSTEM_TEMPLATE
+        return _SYSTEM_TEMPLATE.format(fewshot=_FEWSHOT)
 
     def _tools_spec(self) -> list[dict]:
         """把 ToolRegistry 渲染成 OpenAI `tools` 协议格式。"""
