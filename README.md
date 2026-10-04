@@ -6,7 +6,7 @@
 - 工具注册表 + 插件化扩展
 - 记忆（RAG over 个人笔记）+ MCP + 调度器
 
-当前进度：**M3 已完成** —— 在 M2（完整 Harness：状态持久化/断点续跑/重试幂等/trace_id/Prometheus+Grafana 监控）之上，加入记忆层：RAG over 个人笔记（嵌入 + SQLite 向量库 + 分块索引 + 语义检索工具）。
+当前进度：**M4 已完成** —— 在 M3（记忆层：RAG over 个人笔记）之上，加入 MCP 客户端（stdio JSON-RPC，接外部工具）与多 Agent 编排器（路由到专家）。
 
 ## 目录结构
 
@@ -23,7 +23,8 @@ Warden/
 │   ├── agent/
 │   │   ├── base.py         # BaseAgent 抽象 + AgentStep/AgentRunResult + JSON 解析
 │   │   ├── react.py        # 自研 ReAct 循环
-│   │   └── planact.py      # 自研 PlanAct 循环（Plan → Act → Summarize）
+│   │   ├── planact.py      # 自研 PlanAct 循环（Plan → Act → Summarize）
+│   │   └── orchestrator.py # M4 多 Agent：路由到专家
 │   ├── tools/
 │   │   ├── base.py         # Tool 定义（pydantic 输入模型）
 │   │   ├── registry.py     # 工具注册表
@@ -36,6 +37,10 @@ Warden/
 │   │   ├── vector_store.py# SQLite 向量库 + 余弦检索
 │   │   ├── indexer.py     # 笔记分块 + 索引
 │   │   └── retriever.py   # 查询 → 嵌入 → 检索
+│   ├── mcp/                      # M4 MCP 客户端
+│   │   ├── client.py     # stdio JSON-RPC 客户端
+│   │   ├── tools.py      # MCP 工具 → Warden Tool 适配
+│   │   └── registry.py   # 拉起配置的 MCP server 并注册工具
 │   ├── notify/
 │   │   ├── base.py         # Notifier 抽象
 │   │   ├── console.py      # 控制台通知
@@ -84,6 +89,11 @@ python -m app.cli run news_digest    # 手动触发一次（需 LLM 在线）
 # 先在 .env 设 WARDEN_NOTES_DIR=你的笔记目录，并 `ollama pull nomic-embed-text`
 python -m app.cli index-notes        # 建向量索引
 python -m app.cli search "上个月学了什么"   # 语义检索
+
+# 3d. MCP + 多 Agent
+# 在 .env 配 WARDEN_MCP_SERVERS（JSON 数组），然后：
+python -m app.cli mcp-ls             # 列出 MCP server 暴露的工具
+python -m app.cli team "帮我总结最近的论文进展"   # 路由到专家（需 LLM 在线）
 
 # 4. 跑 API
 uvicorn app.main:app --reload
@@ -163,11 +173,18 @@ docker compose up -d
 - **分块**（`app/memory/indexer.py` 的 `chunk_text`）：先按空行切段落，贪心合并到 `chunk_size`，单段超长硬切带 `overlap`；chunk id 用 `sha1(文件路径:序号)`，重跑索引幂等（INSERT OR REPLACE）。
 - **检索工具**（`app/tools/builtin/search_notes.py`）：`make_search_notes_tool(retriever, top_k)` 生成 `search_notes` 工具，Agent 当用户问"我的笔记/过去想法"时自动调用；`build_default_registry(retriever=None)` 传 retriever 才注册（不传保持 M0 两个工具，零破坏）。
 
+## 核心设计（M4）
+
+- **MCP 客户端**（`app/mcp/client.py`）：零依赖实现 stdio 传输 + JSON-RPC 2.0 —— `subprocess` 拉起 MCP server，按行收发 `initialize` / `tools/list` / `tools/call`。MCP 工具随 server 自动发现，无需预注册。
+- **工具适配**（`app/mcp/tools.py`）：`build_input_model` 用 MCP 工具的 `inputSchema` 动态 `pydantic.create_model`（string/number/integer/boolean/array/object 启发式映射），`adapt_mcp_tool` 把它包成标准 `Tool` 挂进 `ToolRegistry` —— MCP 工具对 Agent 循环与内置工具完全同构。
+- **多 Agent 编排**（`app/agent/orchestrator.py` 的 `Orchestrator`）：一个路由 LLM 决定把请求交给哪个专家（返回 `{"specialist","task"}`），专家各自有独立工具注册表（researcher 带 search_notes/MCP、writer 纯生成）。`BaseAgent` 支持按实例定制 `name`/`description`，同一种 ReAct 循环复用作不同专家身份。
+- **CLI 演示**：`mcp-ls` 列出外部工具；`team` 拉起 researcher + writer，路由委派。
+
 ## 路线图
 
 - **M0 骨架** ✅ FastAPI + ReAct/PlanAct + 工具注册表 + 2 示例工具
 - **M1 动起来** ✅ APScheduler 调度器 + 3 个定时任务 + 通知器
 - **M2 Harness** ✅ 状态持久化 + 断点续跑 + 重试/幂等 + trace_id + Prometheus/Grafana 监控
 - **M3 记忆** ✅ RAG over 个人笔记（嵌入 + SQLite 向量库 + 语义检索工具）
-- **M4 多 Agent + MCP**：检索/摘要/生成多 Agent，MCP 接外部工具
+- **M4 多 Agent + MCP** ✅ MCP 客户端（stdio JSON-RPC）+ 工具适配 + Orchestrator 多 Agent 路由
 - **M5 打磨**：失败率告警、成本统计、可选前端

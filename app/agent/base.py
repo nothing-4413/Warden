@@ -72,13 +72,20 @@ class BaseAgent(ABC):
     """
 
     name: str = "base"
+    description: str = ""
 
     def __init__(self, settings: Settings, llm: LLMClient, tools: ToolRegistry,
-                 store: RunStore | None = None) -> None:
+                 store: RunStore | None = None, name: str | None = None,
+                 description: str | None = None) -> None:
         self.settings = settings
         self.llm = llm
         self.tools = tools
         self.store = store
+        # 允许按实例定制身份（M4 多 Agent：同一种循环复用作不同专家）
+        if name is not None:
+            self.name = name
+        if description is not None:
+            self.description = description
 
     # ---- 对外入口：持久化 + 状态收尾 ----
     def run(self, history: list[dict], trace_id: str | None = None) -> AgentRunResult:

@@ -6,11 +6,14 @@
   python -m app.cli run <task_name>             # 手动触发一次任务
   python -m app.cli index-notes                 # 索引个人笔记（RAG）
   python -m app.cli search "关键字"             # 语义检索个人笔记
+  python -m app.cli mcp-ls                      # 列出 MCP server 工具
+  python -m app.cli team "复杂任务"              # 多 Agent 编排
 """
 from __future__ import annotations
 
 import argparse
 
+from .agent.orchestrator import Orchestrator
 from .agent.planact import PlanActAgent
 from .agent.react import ReactAgent
 from .config import get_settings
@@ -114,6 +117,41 @@ def _mcp_list() -> int:
     return 0
 
 
+def _team(query: str) -> int:
+    settings = get_settings()
+    llm = LLMClient(settings)
+    store = RunStore(settings.db_path)
+    _embedder, mem_store, retriever = _build_memory(settings)
+
+    # researcher：带 search_notes（RAG 记忆）+ 所有 MCP 工具
+    researcher_tools = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k)
+    mcp_clients: list = []
+    if settings.mcp_servers:
+        try:
+            mcp_registry, mcp_clients = build_mcp_registry(settings.mcp_servers)
+            for t in mcp_registry.all():
+                researcher_tools.register(t)
+        except Exception as exc:
+            print(f"[warn] MCP 工具加载失败，跳过：{exc}")
+
+    specialists = {
+        "researcher": ReactAgent(settings, llm, researcher_tools, store=store,
+                                 name="researcher", description="检索个人笔记/外部工具并回答问题"),
+        "writer": ReactAgent(settings, llm, build_default_registry(), store=store,
+                             name="writer", description="基于给定信息写摘要/文案，不检索"),
+    }
+    orchestrator = Orchestrator(specialists, llm)
+    try:
+        result = orchestrator.run([{"role": "user", "content": query}])
+    finally:
+        for c in mcp_clients:
+            c.close()
+        store.close()
+        mem_store.close()
+    print(f"[orchestrator -> {result.agent}] {result.answer}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     configure_logging()
     parser = argparse.ArgumentParser(prog="warden", description="Warden CLI")
@@ -132,6 +170,9 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("mcp-ls", help="列出 MCP server 暴露的工具")
 
+    p_team = sub.add_parser("team", help="多 Agent 编排：路由到专家")
+    p_team.add_argument("query", help="user request")
+
     p_search = sub.add_parser("search", help="语义检索个人笔记")
     p_search.add_argument("query", help="检索关键词/问题")
 
@@ -146,6 +187,8 @@ def main(argv: list[str] | None = None) -> int:
         return _index_notes()
     elif args.command == "mcp-ls":
         return _mcp_list()
+    elif args.command == "team":
+        return _team(args.query)
     elif args.command == "search":
         _search_notes(args.query)
     return 0
