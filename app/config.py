@@ -43,6 +43,8 @@ class Settings:
     max_observation_chars: int = int(os.getenv("WARDEN_MAX_OBSERVATION_CHARS", "2000"))
     # 多轮上下文窗口上限：历史超过此条数时，把最旧消息压成一段摘要（0 = 不压缩，保留全部历史）
     context_max_messages: int = int(os.getenv("WARDEN_CONTEXT_MAX_MESSAGES", "30"))
+    # 自反思（Reflexion-lite）：给出最终答案前让模型自我校验，必要时回补（true 开启，多一次 LLM 调用）
+    reflect_enabled: bool = os.getenv("WARDEN_REFLECT_ENABLED", "false").lower() in ("1", "true", "yes")
 
     # API
     api_host: str = os.getenv("WARDEN_API_HOST", "127.0.0.1")

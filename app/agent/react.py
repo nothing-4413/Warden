@@ -50,6 +50,15 @@ _FORCE_FINAL_PROMPT = (
     "give the best final answer you can, as plain text."
 )
 
+_REFLECT_PROMPT = """\
+Critically review this draft final answer against the user's request and the observations.
+Reply with EXACTLY ONE JSON object:
+{"verdict": "ok" | "redo", "feedback": "..."}
+
+Use "ok" if the answer is complete, correct, and well-supported; use "redo" if it has a
+gap, error, or missing step — then put a concrete instruction for improvement in "feedback".
+"""
+
 
 class ReactAgent(BaseAgent):
     name = "react"
@@ -85,6 +94,25 @@ class ReactAgent(BaseAgent):
         except ValueError:
             return None, raw
 
+    def _reflect(self, draft: str, steps: list[AgentStep]) -> tuple[str, str]:
+        """自反思（Reflexion-lite）：让模型审查草稿答案，返回 (verdict, feedback)。
+
+        verdict ∈ {"ok","redo"}；反思解析失败时默认 "ok" 放行，不阻塞主循环。
+        """
+        observations = "\n".join(
+            f"- {s.action or '(think)'}: {s.observation}"
+            for s in steps if s.observation is not None)
+        parsed, _raw = self._chat_json([
+            {"role": "system", "content": _REFLECT_PROMPT},
+            {"role": "user",
+             "content": f"Draft answer:\n{draft}\n\nObservations so far:\n{observations}"},
+        ])
+        if parsed is None:
+            return "ok", ""
+        verdict = str(parsed.get("verdict", "ok")).lower()
+        feedback = str(parsed.get("feedback", "") or "")
+        return (verdict if verdict in ("ok", "redo") else "ok"), feedback
+
     def _run(self, history: list[dict], record: RunRecord | None) -> AgentRunResult:
         return self._loop(self._messages(history), [], record, 0)
 
@@ -117,11 +145,23 @@ class ReactAgent(BaseAgent):
                                       agent=self.name, model=self.llm.model)
 
             if "final_answer" in parsed:
-                s = AgentStep(index=index, thought=parsed.get("thought"),
-                              observation=parsed["final_answer"])
+                answer = str(parsed["final_answer"])
+                s = AgentStep(index=index, thought=parsed.get("thought"), observation=answer)
                 steps.append(s)
                 self._persist_step(record, s, raw)
-                return AgentRunResult(answer=str(parsed["final_answer"]), steps=steps,
+
+                # 自反思（Reflexion-lite）：定稿前自我校验，必要时带着反馈回炉重答
+                if self.settings.reflect_enabled:
+                    verdict, feedback = self._reflect(answer, steps)
+                    if verdict == "redo":
+                        steps.append(AgentStep(index=index, thought="reflection",
+                                               action="_reflect", observation=feedback))
+                        self._persist_step(record, steps[-1], None)
+                        messages.append({"role": "assistant", "content": raw.strip()})
+                        messages.append({"role": "user", "content": f"Reflection: {feedback}"})
+                        continue  # 下一轮让模型基于反馈改进答案或补查工具
+
+                return AgentRunResult(answer=answer, steps=steps,
                                       agent=self.name, model=self.llm.model)
 
             action = parsed.get("action")
