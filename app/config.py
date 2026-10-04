@@ -41,6 +41,8 @@ class Settings:
     agent_max_steps: int = int(os.getenv("WARDEN_AGENT_MAX_STEPS", "10"))
     # 工具观测截断上限（上下文工程：防止长工具输出撑爆上下文窗口，0 = 不截断）
     max_observation_chars: int = int(os.getenv("WARDEN_MAX_OBSERVATION_CHARS", "2000"))
+    # 多轮上下文窗口上限：历史超过此条数时，把最旧消息压成一段摘要（0 = 不压缩，保留全部历史）
+    context_max_messages: int = int(os.getenv("WARDEN_CONTEXT_MAX_MESSAGES", "30"))
 
     # API
     api_host: str = os.getenv("WARDEN_API_HOST", "127.0.0.1")

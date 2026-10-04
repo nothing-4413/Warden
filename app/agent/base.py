@@ -90,6 +90,9 @@ class BaseAgent(ABC):
     # ---- 对外入口：持久化 + 状态收尾 ----
     def run(self, history: list[dict], trace_id: str | None = None) -> AgentRunResult:
         started = time.time()
+        # 多轮上下文窗口：超出上限先把最旧消息压成摘要；压缩结果随 record.input 持久化，
+        # resume 重建上下文时复用同一份，保证续跑与首跑看到一致的上下文。
+        history = self._history_with_summary(history)
         record = self._begin("chat", history, trace_id)
         try:
             result = self._run(history, record)
@@ -195,3 +198,28 @@ class BaseAgent(ABC):
         if len(value) <= limit:
             return value
         return value[:limit] + f"... [truncated, {len(value)} chars total]"
+
+    def _history_with_summary(self, history: list[dict]) -> list[dict]:
+        """多轮上下文窗口：历史超长时把最旧消息压成一段摘要（滑动窗口 + 摘要压缩）。
+
+        保留最近 context_max_messages 条原文；更早的历史用一次 LLM 调用压成 2-3 句
+        摘要，作为上下文开头。摘要失败则退化为"纯窗口"（丢弃最旧消息），保证循环
+        不被上下文问题卡死。limit <= 0 表示不压缩，原样返回。
+        """
+        limit = self.settings.context_max_messages
+        if limit <= 0 or len(history) <= limit:
+            return history
+        overflow = history[:-limit]
+        kept = history[-limit:]
+        try:
+            summary = self.llm.chat([
+                {"role": "system",
+                 "content": "Summarize the conversation below in 2-3 sentences, "
+                            "preserving the user's goals, key facts, and decisions."},
+                *overflow,
+            ]).strip()
+        except Exception:
+            # 摘要失败（LLM 不可达/超时）就退回纯窗口，宁可丢信息也不阻塞对话
+            return kept
+        return [{"role": "user",
+                 "content": f"[Earlier conversation summary]\n{summary}"}, *kept]
