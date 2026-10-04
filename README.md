@@ -31,7 +31,7 @@ Warden/
 │   │   ├── pipeline.py     # Phase D 多 Agent 接力（researcher → critic）
 │   │   └── blackboard.py   # 多 Agent 共享工作记忆（黑板 Blackboard + BlackboardTeam）
 │   ├── tools/
-│   │   ├── base.py         # Tool 定义（pydantic 输入模型）
+│   │   ├── base.py         # Tool 定义（pydantic 输入/输出模型 + 执行超时）
 │   │   ├── registry.py     # 工具注册表
 │   │   └── builtin/
 │   │       ├── calculator.py      # 安全算术求值（ast 白名单，非 eval）
@@ -157,7 +157,7 @@ docker compose up -d
 - **ReAct 循环**（`app/agent/react.py`）：Thought → Action → Observation 直到 Final Answer。输出契约为**单个 JSON 对象**二选一 —— `{"thought","action","action_input"}` 或 `{"thought","final_answer"}`。选 JSON 而非自由文本 `Action:` 解析，是因为本地小模型对 JSON 遵从度更高、解析更鲁棒（`extract_json` 容忍代码围栏与噪声）。健壮性：JSON 解析失败会把错误反馈回模型**自纠重试一次**；达到最大步数未收尾时，让模型基于已有观测**强制给出最终回答**（而非只报诊断）。自反思（Reflexion-lite，`WARDEN_REFLECT_ENABLED=true` 开启）：给出最终答案前让模型审查草稿（`{"verdict":"ok|redo","feedback"}`），`redo` 时带着反馈回炉重答或补查工具，`ok` 才定稿。Few-shot 示例（In-Context Learning）：system prompt 注入一条静态「工具调用→观测→最终答案」轨迹，进一步稳定本地小模型的 JSON 契约遵从度。
 - **PlanAct 循环**（`app/agent/planact.py`）：三步 —— ① Plan 让模型产出有序步骤列表（每步可选绑定工具+参数）；② Act 按序确定性执行；③ Summarize 汇总结果出最终答案。M0 用"规划期即固定工具调用"，可解释、无额外 LLM 调用。动态重规划（`WARDEN_MAX_REPLANS`，默认 2）：某步工具执行失败（观测以 `error:` 前缀回传）时，把失败信息反馈给模型重规划剩余步骤，形成"计划→执行→重规划"闭环，且重规划次数有上限、不会无限循环。
 - **原生 Function Calling 循环**（`app/agent/function_call.py`）：把工具以 OpenAI `tools` 协议直接交给模型，模型原生返回 `tool_calls`（含 `tool_call_id` + 结构化 arguments），执行后以 `role:"tool"` 回填上下文。与 ReAct 的 JSON-in-prompt 路线并存，展示"prompt 级"与"协议级"两种工具调用方式。system prompt 同样注入工具选择的 few-shot 提示。
-- **工具注册表**（`app/tools/registry.py`）：新增工具 = 写一个 `Tool` 并 `register`，核心循环零改动。工具输入用 pydantic 模型，同一模型既做运行时校验、又生成 JSON Schema 注入 prompt。
+- **工具注册表**（`app/tools/registry.py`）：新增工具 = 写一个 `Tool` 并 `register`，核心循环零改动。工具输入用 pydantic 模型，同一模型既做运行时校验、又生成 JSON Schema 注入 prompt。工具输出 Schema 校验 + 执行超时（`app/tools/base.py`）：`Tool` 可选声明 `output_model`（func 返回值强制校验成该模型，校验失败返回 `error:` 错误串供 Agent 自纠）与 `timeout_s`（>0 时在后台线程跑、超时返回错误串，防止单个工具卡死整个循环）。两者都是 per-tool 可选，默认关闭、零破坏。
 - **安全 calculator**（`app/tools/builtin/calculator.py`）：不用 `eval`，改用 `ast` 解析 + 白名单节点，只允许四则/幂/取模/整除/括号。
 - **LLM 客户端**（`app/llm.py`）：不引入 `openai` SDK，`httpx` 直连 `/chat/completions`，`base_url` 指向哪就是哪。
 
