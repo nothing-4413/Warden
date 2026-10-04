@@ -48,6 +48,22 @@ Step results (JSON):
 Reply with the final answer as plain text.
 """
 
+_REPLAN_TEMPLATE = """\
+You are Warden, a planning agent. A step of your plan failed during execution.
+
+Available tools:
+{tools}
+
+Reply with EXACTLY ONE JSON object listing ONLY the steps that should run AFTER the failed
+step (to work around the error):
+{{"plan": [{{"step": "what to do", "tool": "tool_name or null", "args": {{...}} or null}}]}}
+
+Rules:
+- Do not repeat the failed step or any already-completed step.
+- Adjust the remaining steps to work around the error (e.g. pick a different tool or rephrase).
+- Keep the plan as short as possible; return an empty plan if no further steps are needed.
+"""
+
 
 class PlanActAgent(BaseAgent):
     name = "planact"
@@ -88,8 +104,10 @@ class PlanActAgent(BaseAgent):
                            action_input=d.get("args"), observation=d.get("result")) for d in done]
         results = [{"step": d.get("step"), "result": d.get("result")} for d in done]
 
-        # 2. Act（从 start_index 继续，支持断点续跑）
-        for i in range(start_index, len(plan)):
+        # 2. Act（从 start_index 继续，支持断点续跑；工具失败时动态重规划剩余步骤）
+        replans_left = self.settings.max_replans
+        i = start_index
+        while i < len(plan):
             item = plan[i]
             step_desc = item.get("step", "")
             tool = item.get("tool")
@@ -99,6 +117,17 @@ class PlanActAgent(BaseAgent):
                 steps.append(AgentStep(index=i, thought=step_desc, action=tool,
                                        action_input=args, observation=observation))
                 results.append({"step": step_desc, "result": observation})
+                # 失败检测（_execute 的错误以 "error: " 前缀字符串回传）+ 动态重规划
+                if (isinstance(observation, str) and observation.startswith("error:")
+                        and replans_left > 0):
+                    replans_left -= 1
+                    replanned = self._replan(request, plan, i, item, observation)
+                    if replanned:
+                        # 用重规划结果替换失败步骤之后的剩余步骤
+                        plan = plan[: i + 1] + replanned
+                        if record is not None:
+                            record.meta = {**(record.meta or {}), "plan": plan}
+                            self.store.update(record)
             else:
                 # 无工具的纯推理步骤：不额外调用 LLM，交由汇总阶段处理
                 steps.append(AgentStep(index=i, thought=step_desc))
@@ -107,6 +136,7 @@ class PlanActAgent(BaseAgent):
                 record.steps.append({"index": i, "step": step_desc, "tool": tool,
                                      "args": args, "result": results[-1]["result"]})
                 self.store.update(record)
+            i += 1
 
         # 3. Summarize
         summary_messages = [
@@ -117,3 +147,23 @@ class PlanActAgent(BaseAgent):
         answer = self._chat(summary_messages).strip()
 
         return AgentRunResult(answer=answer, steps=steps, agent=self.name, model=self.llm.model)
+
+    def _replan(self, request: str, plan: list, failed_index: int,
+                failed_item: dict, error: str) -> list:
+        """工具失败后让模型重规划剩余步骤；失败则返回 []（保持原计划剩余步骤）。"""
+        remaining = plan[failed_index + 1:]
+        messages = [
+            {"role": "system",
+             "content": _REPLAN_TEMPLATE.format(tools=self.tools.render_prompt())},
+            {"role": "user", "content": json.dumps({
+                "request": request,
+                "failed_step": failed_item.get("step", ""),
+                "error": error,
+                "remaining_steps": remaining,
+            }, ensure_ascii=False)},
+        ]
+        try:
+            raw = self._chat(messages)
+            return extract_json(raw).get("plan") or []
+        except Exception:
+            return []

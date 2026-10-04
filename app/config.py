@@ -45,6 +45,8 @@ class Settings:
     context_max_messages: int = int(os.getenv("WARDEN_CONTEXT_MAX_MESSAGES", "30"))
     # 自反思（Reflexion-lite）：给出最终答案前让模型自我校验，必要时回补（true 开启，多一次 LLM 调用）
     reflect_enabled: bool = os.getenv("WARDEN_REFLECT_ENABLED", "false").lower() in ("1", "true", "yes")
+    # PlanAct 动态重规划：某步工具执行失败时重规划剩余步骤的上限次数（0 = 关闭重规划）
+    max_replans: int = int(os.getenv("WARDEN_MAX_REPLANS", "2"))
 
     # API
     api_host: str = os.getenv("WARDEN_API_HOST", "127.0.0.1")
