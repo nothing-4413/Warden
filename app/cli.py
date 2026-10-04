@@ -19,6 +19,7 @@ from .harness.run_store import RunStore
 from .llm import LLMClient
 from .memory import NotesIndexer, Retriever, VectorStore
 from .memory.embeddings import EmbeddingClient
+from .mcp import build_mcp_registry
 from .notify import get_notifier
 from .scheduler import Services, TaskNotFoundError, run_once
 from .tasks import build_default_task_registry
@@ -97,6 +98,22 @@ def _search_notes(query: str) -> None:
     store.close()
 
 
+def _mcp_list() -> int:
+    settings = get_settings()
+    servers = settings.mcp_servers
+    if not servers:
+        print("未配置 WARDEN_MCP_SERVERS（JSON 数组 [{name, command:[...]}]）。")
+        return 1
+    registry, clients = build_mcp_registry(servers)
+    try:
+        for t in registry.all():
+            print(f"- {t.name}: {t.description}")
+    finally:
+        for c in clients:
+            c.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     configure_logging()
     parser = argparse.ArgumentParser(prog="warden", description="Warden CLI")
@@ -113,6 +130,8 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("index-notes", help="索引个人笔记（RAG 记忆）")
 
+    sub.add_parser("mcp-ls", help="列出 MCP server 暴露的工具")
+
     p_search = sub.add_parser("search", help="语义检索个人笔记")
     p_search.add_argument("query", help="检索关键词/问题")
 
@@ -125,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_task(args.task)
     elif args.command == "index-notes":
         return _index_notes()
+    elif args.command == "mcp-ls":
+        return _mcp_list()
     elif args.command == "search":
         _search_notes(args.query)
     return 0

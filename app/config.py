@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 
@@ -67,9 +68,19 @@ class Settings:
     chunk_overlap: int = int(os.getenv("WARDEN_CHUNK_OVERLAP", "100"))
     retrieval_top_k: int = int(os.getenv("WARDEN_RETRIEVAL_TOP_K", "4"))
 
+    # MCP（M4）：JSON 数组 [{name, command:[...]}]
+    mcp_servers_json: str = os.getenv("WARDEN_MCP_SERVERS", "")
+
     @property
     def rss_source_list(self) -> list[str]:
         return [s.strip() for s in self.rss_sources.split(",") if s.strip()]
+
+    @property
+    def mcp_servers(self) -> list[dict]:
+        """解析 WARDEN_MCP_SERVERS JSON 为 [{name, command:[...]}]，空则 []。"""
+        if not self.mcp_servers_json.strip():
+            return []
+        return json.loads(self.mcp_servers_json)
 
 
 _settings: Settings | None = None
