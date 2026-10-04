@@ -197,6 +197,16 @@ docker compose up -d
 - **失败率告警**（`deploy/prometheus/alerts.yml`）：`WardenHighFailureRate` 规则在 5 分钟窗口内 error 占比 > 20% 时触发（M2 已与监控大盘一起落地）。
 - **简单控制台**（`app/static/index.html` + `GET /` + `GET /api/v1/runs`）：自包含 HTML（零构建、纯 vanilla JS），展示系统状态 / 任务列表（可手动触发）/ 最近运行记录，并链接到 /metrics。
 
+## 端到端冒烟（真实 LLM）
+
+离线单测（`pytest`）用 FakeLLM 验证循环逻辑、零网络；要验证真实链路，跑一次冒烟（需 LLM 在线）：
+
+```bash
+python -m scripts.smoke
+```
+
+它依次跑通：LLM 探活 → react / planact / function_call 三种循环（各用计算器验证真实工具调用）→ research 接力（researcher → critic）→ team 路由。全绿退出码 0。
+
 ## 路线图
 
 - **M0 骨架** ✅ FastAPI + ReAct/PlanAct/Function Calling + 工具注册表 + 2 示例工具
