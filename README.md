@@ -27,7 +27,8 @@ Warden/
 │   │   ├── react.py        # 自研 ReAct 循环
 │   │   ├── planact.py      # 自研 PlanAct 循环（Plan → Act → Summarize）
 │   │   ├── function_call.py # 自研原生 Function Calling 循环
-│   │   └── orchestrator.py # M4 多 Agent：路由到专家
+│   │   ├── orchestrator.py # M4 多 Agent：路由到专家
+│   │   └── pipeline.py     # Phase D 多 Agent 接力（researcher → critic）
 │   ├── tools/
 │   │   ├── base.py         # Tool 定义（pydantic 输入模型）
 │   │   ├── registry.py     # 工具注册表
@@ -99,6 +100,7 @@ python -m app.cli search "上个月学了什么"   # 语义检索
 # 在 .env 配 WARDEN_MCP_SERVERS（JSON 数组），然后：
 python -m app.cli mcp-ls             # 列出 MCP server 暴露的工具
 python -m app.cli team "帮我总结最近的论文进展"   # 路由到专家（需 LLM 在线）
+python -m app.cli research "帮我查证 X 是否成立"   # 接力：researcher → critic（需 LLM 在线）
 
 # 4. 跑 API
 uvicorn app.main:app --reload
@@ -186,7 +188,8 @@ docker compose up -d
 - **MCP 客户端**（`app/mcp/client.py`）：零依赖实现 stdio 传输 + JSON-RPC 2.0 —— `subprocess` 拉起 MCP server，按行收发 `initialize` / `tools/list` / `tools/call`。MCP 工具随 server 自动发现，无需预注册。
 - **工具适配**（`app/mcp/tools.py`）：`build_input_model` 用 MCP 工具的 `inputSchema` 动态 `pydantic.create_model`（string/number/integer/boolean/array/object 启发式映射），`adapt_mcp_tool` 把它包成标准 `Tool` 挂进 `ToolRegistry` —— MCP 工具对 Agent 循环与内置工具完全同构。
 - **多 Agent 编排**（`app/agent/orchestrator.py` 的 `Orchestrator`）：一个路由 LLM 决定把请求交给哪个专家（返回 `{"specialist","task"}`），专家各自有独立工具注册表（researcher 带 search_notes/MCP、writer 纯生成）。`BaseAgent` 支持按实例定制 `name`/`description`，同一种 ReAct 循环复用作不同专家身份。
-- **CLI 演示**：`mcp-ls` 列出外部工具；`team` 拉起 researcher + writer，路由委派。
+- **多 Agent 接力**（`app/agent/pipeline.py` 的 `CriticPipeline`）：比路由更进一步——Researcher（带 search_notes/MCP 工具检索查证）先产出 findings，Critic（无工具、纯推理）再挑错补缺、给出改进版最终答案。前一个 Agent 的产出作为后一个的输入，两个 Agent 的 steps 合并回传，全程可追溯。
+- **CLI 演示**：`mcp-ls` 列出外部工具；`team` 拉起 researcher + writer 路由委派；`research` 拉起 researcher + critic 接力协作。
 
 ## 核心设计（M5）
 
@@ -200,5 +203,5 @@ docker compose up -d
 - **M1 动起来** ✅ APScheduler 调度器 + 3 个定时任务 + 通知器
 - **M2 Harness** ✅ 状态持久化 + 断点续跑 + 重试/幂等 + trace_id + Prometheus/Grafana 监控
 - **M3 记忆** ✅ RAG over 个人笔记（嵌入 + SQLite 向量库 + 语义检索工具）
-- **M4 多 Agent + MCP** ✅ MCP 客户端（stdio JSON-RPC）+ 工具适配 + Orchestrator 多 Agent 路由
+- **M4 多 Agent + MCP** ✅ MCP 客户端（stdio JSON-RPC）+ 工具适配 + Orchestrator 多 Agent 路由 + CriticPipeline 接力
 - **M5 打磨** ✅ 失败率告警 + 成本统计（token/成本指标）+ 简单控制台（可选前端）

@@ -7,7 +7,8 @@
   python -m app.cli index-notes                 # 索引个人笔记（RAG）
   python -m app.cli search "关键字"             # 语义检索个人笔记
   python -m app.cli mcp-ls                      # 列出 MCP server 工具
-  python -m app.cli team "复杂任务"              # 多 Agent 编排
+  python -m app.cli team "复杂任务"              # 多 Agent 编排（路由）
+  python -m app.cli research "复杂问题"           # 多 Agent 接力（researcher → critic）
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import argparse
 
 from .agent.function_call import FunctionCallAgent
 from .agent.orchestrator import Orchestrator
+from .agent.pipeline import CriticPipeline
 from .agent.planact import PlanActAgent
 from .agent.react import ReactAgent
 from .config import get_settings
@@ -27,7 +29,7 @@ from .mcp import build_mcp_registry
 from .notify import get_notifier
 from .scheduler import Services, TaskNotFoundError, run_once
 from .tasks import build_default_task_registry
-from .tools import build_default_registry
+from .tools import ToolRegistry, build_default_registry
 
 
 def _build_memory(settings):
@@ -156,6 +158,40 @@ def _team(query: str) -> int:
     return 0
 
 
+def _research(query: str) -> int:
+    """多 Agent 接力：researcher（带工具检索）→ critic（挑错补缺）。"""
+    settings = get_settings()
+    llm = LLMClient(settings)
+    store = RunStore(settings.db_path)
+    _embedder, mem_store, retriever = _build_memory(settings)
+
+    researcher_tools = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
+                                              min_score=settings.retrieval_min_score)
+    mcp_clients: list = []
+    if settings.mcp_servers:
+        try:
+            mcp_registry, mcp_clients = build_mcp_registry(settings.mcp_servers)
+            for t in mcp_registry.all():
+                researcher_tools.register(t)
+        except Exception as exc:
+            print(f"[warn] MCP 工具加载失败，跳过：{exc}")
+
+    researcher = ReactAgent(settings, llm, researcher_tools, store=store,
+                            name="researcher", description="检索个人笔记/外部工具并查证事实")
+    critic = ReactAgent(settings, llm, ToolRegistry(), store=store,
+                        name="critic", description="审查 researcher 产出，挑错补缺并改写最终答案")
+    pipeline = CriticPipeline(researcher, critic)
+    try:
+        result = pipeline.run(query)
+    finally:
+        for c in mcp_clients:
+            c.close()
+        store.close()
+        mem_store.close()
+    print(f"[{result.agent}] {result.answer}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     configure_logging()
     parser = argparse.ArgumentParser(prog="warden", description="Warden CLI")
@@ -177,6 +213,9 @@ def main(argv: list[str] | None = None) -> int:
     p_team = sub.add_parser("team", help="多 Agent 编排：路由到专家")
     p_team.add_argument("query", help="user request")
 
+    p_research = sub.add_parser("research", help="多 Agent 接力：researcher → critic")
+    p_research.add_argument("query", help="user request")
+
     p_search = sub.add_parser("search", help="语义检索个人笔记")
     p_search.add_argument("query", help="检索关键词/问题")
 
@@ -193,6 +232,8 @@ def main(argv: list[str] | None = None) -> int:
         return _mcp_list()
     elif args.command == "team":
         return _team(args.query)
+    elif args.command == "research":
+        return _research(args.query)
     elif args.command == "search":
         _search_notes(args.query)
     return 0
