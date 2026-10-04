@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warden 控制台</title>
+<style>
+  :root { --bg:#0f1117; --card:#171a21; --line:#262b36; --fg:#e6e8ee; --muted:#8a93a6;
+          --accent:#4f8cff; --ok:#2ecc71; --err:#ff5c5c; --run:#f0a030; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+         background:var(--bg); color:var(--fg); }
+  header { padding:20px 28px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:20px; margin:0; }
+  header .ver { color:var(--muted); font-size:13px; }
+  main { padding:24px 28px; display:grid; gap:20px; max-width:1100px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; }
+  .card h2 { margin:0 0 12px; font-size:15px; color:var(--muted); font-weight:600; letter-spacing:.3px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.4px; }
+  tr:last-child td { border-bottom:none; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:99px; font-size:12px; font-weight:600; }
+  .ok  { background:rgba(46,204,113,.15); color:var(--ok); }
+  .err { background:rgba(255,92,92,.15);  color:var(--err); }
+  .run { background:rgba(240,160,48,.15); color:var(--run); }
+  .chip { display:inline-block; padding:2px 8px; margin:2px; border-radius:6px;
+          background:rgba(79,140,255,.12); color:var(--accent); font-size:12px; }
+  button { background:var(--accent); color:#fff; border:none; border-radius:6px;
+           padding:6px 12px; font-size:13px; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .muted { color:var(--muted); font-size:12px; }
+  a { color:var(--accent); text-decoration:none; }
+  code { font-family: ui-monospace, "Cascadia Code", monospace; font-size:12px; color:var(--muted); }
+  .empty { color:var(--muted); font-size:13px; padding:6px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Warden</h1><span class="ver">控制台</span>
+  <span style="flex:1"></span>
+  <a href="/metrics">Prometheus /metrics</a>
+</header>
+<main>
+  <div class="card">
+    <h2>系统状态</h2>
+    <div id="health" class="muted">加载中…</div>
+  </div>
+  <div class="card">
+    <h2>定时任务</h2>
+    <div id="tasks" class="muted">加载中…</div>
+  </div>
+  <div class="card">
+    <h2>最近运行</h2>
+    <div id="runs" class="muted">加载中…</div>
+  </div>
+</main>
+<script>
+async function json(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function statusPill(s) {
+  const cls = s === 'ok' ? 'ok' : s === 'error' ? 'err' : 'run';
+  return `<span class="pill ${cls}">${esc(s)}</span>`;
+}
+async function loadHealth() {
+  const h = await json('/health');
+  document.getElementById('health').innerHTML =
+    `<div style="margin-bottom:8px"><span class="pill ok">${esc(h.status)}</span> 模型 <code>${esc(h.model)}</code></div>` +
+    `<div>工具：${(h.tools||[]).map(t => `<span class="chip">${esc(t)}</span>`).join('') || '<span class="muted">无</span>'}</div>` +
+    `<div style="margin-top:8px">任务：${(h.tasks||[]).map(t => `<span class="chip">${esc(t)}</span>`).join('') || '<span class="muted">无</span>'}</div>`;
+}
+async function loadTasks() {
+  const tasks = await json('/api/v1/tasks');
+  if (!tasks.length) { document.getElementById('tasks').innerHTML = '<div class="empty">暂无任务</div>'; return; }
+  const rows = tasks.map(t => {
+    const sched = typeof t.schedule === 'object' ? JSON.stringify(t.schedule) : t.schedule;
+    return `<tr><td><code>${esc(t.name)}</code></td><td>${esc(t.description)}</td>` +
+           `<td class="muted">${esc(sched)}</td>` +
+           `<td><button data-task="${esc(t.name)}">运行</button></td></tr>`;
+  }).join('');
+  document.getElementById('tasks').innerHTML =
+    `<table><thead><tr><th>任务</th><th>说明</th><th>调度</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  document.querySelectorAll('button[data-task]').forEach(b => {
+    b.addEventListener('click', async () => {
+      b.disabled = true; b.textContent = '运行中…';
+      try {
+        const res = await json(`/api/v1/tasks/${encodeURIComponent(b.dataset.task)}/run`, {method:'POST'});
+        alert(`任务 ${res.task} 状态：${res.status}\n${res.summary || ''}`);
+        loadRuns();
+      } catch (e) { alert('运行失败：' + e.message); }
+      finally { b.disabled = false; b.textContent = '运行'; }
+    });
+  });
+}
+async function loadRuns() {
+  const runs = await json('/api/v1/runs?limit=20');
+  if (!runs.length) { document.getElementById('runs').innerHTML = '<div class="empty">暂无运行记录</div>'; return; }
+  const rows = runs.map(r =>
+    `<tr><td class="muted">${esc(r.started_at)}</td><td><code>${esc(r.kind)}</code></td>` +
+    `<td>${esc(r.name)}</td><td>${statusPill(r.status)}</td>` +
+    `<td>${r.attempts}</td><td class="muted">${esc(r.error)}</td></tr>`
+  ).join('');
+  document.getElementById('runs').innerHTML =
+    `<table><thead><tr><th>开始时间</th><th>类型</th><th>名称</th><th>状态</th><th>尝试</th><th>错误</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+loadHealth().catch(e => document.getElementById('health').textContent = '加载失败：' + e.message);
+loadTasks().catch(e => document.getElementById('tasks').textContent = '加载失败：' + e.message);
+loadRuns().catch(e => document.getElementById('runs').textContent = '加载失败：' + e.message);
+setInterval(loadRuns, 5000);
+</script>
+</body>
+</html>

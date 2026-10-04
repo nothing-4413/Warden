@@ -6,7 +6,7 @@
 - 工具注册表 + 插件化扩展
 - 记忆（RAG over 个人笔记）+ MCP + 调度器
 
-当前进度：**M5 进行中** —— 在 M4（MCP + 多 Agent 编排）之上，加入 LLM 成本统计（token 用量 + 按模型单价折算成本，暴露 Prometheus 指标）；失败率告警已在 M2 落地。
+当前进度：**M5 已完成** —— 全部里程碑收尾：失败率告警（Prometheus 规则）、LLM 成本统计（token 用量 + 按模型单价折算成本）、以及一个零构建的简单控制台（浏览器打开 `/`）。
 
 ## 目录结构
 
@@ -20,6 +20,8 @@ Warden/
 │   ├── schemas.py          # API 请求/响应模型
 │   ├── main.py             # FastAPI 应用 + 路由
 │   ├── cli.py              # python -m app.cli 快速调试
+│   ├── static/
+│   │   └── index.html      # M5 简单控制台（自包含，零构建）
 │   ├── agent/
 │   │   ├── base.py         # BaseAgent 抽象 + AgentStep/AgentRunResult + JSON 解析
 │   │   ├── react.py        # 自研 ReAct 循环
@@ -49,7 +51,8 @@ Warden/
 │   │   ├── trace.py        # trace_id（contextvar + logging 注入）
 │   │   ├── run_store.py    # RunStore：SQLite 持久化每次运行
 │   │   ├── retry.py        # with_retry：指数退避重试
-│   │   └── metrics.py      # Prometheus 指标（runs_total + duration）
+│   │   ├── metrics.py      # Prometheus 指标（runs/token/成本）
+│   │   └── cost.py         # M5 成本折算（token × 单价）
 │   ├── scheduler/
 │   │   ├── base.py         # BaseTask 抽象 + TaskResult + Services
 │   │   ├── registry.py     # 任务注册表
@@ -102,6 +105,7 @@ uvicorn app.main:app --reload
 # 任务列表：GET /api/v1/tasks
 # 手动触发：POST /api/v1/tasks/{name}/run
 # 监控指标：GET /metrics（Prometheus 文本格式，Grafana 数据源）
+# 控制台：浏览器打开 http://127.0.0.1:8000/
 
 # 5. 跑测试
 pytest -q
@@ -180,6 +184,12 @@ docker compose up -d
 - **多 Agent 编排**（`app/agent/orchestrator.py` 的 `Orchestrator`）：一个路由 LLM 决定把请求交给哪个专家（返回 `{"specialist","task"}`），专家各自有独立工具注册表（researcher 带 search_notes/MCP、writer 纯生成）。`BaseAgent` 支持按实例定制 `name`/`description`，同一种 ReAct 循环复用作不同专家身份。
 - **CLI 演示**：`mcp-ls` 列出外部工具；`team` 拉起 researcher + writer，路由委派。
 
+## 核心设计（M5）
+
+- **成本统计**（`app/harness/cost.py` 的 `compute_cost` + `app/harness/metrics.py` 的 `record_llm_usage`）：`LLMClient.chat` 顺手解析响应里的 `usage`（prompt/completion tokens）存入 `last_usage`，按模型单价（`WARDEN_LLM_*_PRICE_PER_1M`，USD / 1M tokens，默认 0 = 本地模型免费）折算成本，累计进 `warden_tokens_total` / `warden_cost_dollars_total` 两个 Prometheus 指标。
+- **失败率告警**（`deploy/prometheus/alerts.yml`）：`WardenHighFailureRate` 规则在 5 分钟窗口内 error 占比 > 20% 时触发（M2 已与监控大盘一起落地）。
+- **简单控制台**（`app/static/index.html` + `GET /` + `GET /api/v1/runs`）：自包含 HTML（零构建、纯 vanilla JS），展示系统状态 / 任务列表（可手动触发）/ 最近运行记录，并链接到 /metrics。
+
 ## 路线图
 
 - **M0 骨架** ✅ FastAPI + ReAct/PlanAct + 工具注册表 + 2 示例工具
@@ -187,4 +197,4 @@ docker compose up -d
 - **M2 Harness** ✅ 状态持久化 + 断点续跑 + 重试/幂等 + trace_id + Prometheus/Grafana 监控
 - **M3 记忆** ✅ RAG over 个人笔记（嵌入 + SQLite 向量库 + 语义检索工具）
 - **M4 多 Agent + MCP** ✅ MCP 客户端（stdio JSON-RPC）+ 工具适配 + Orchestrator 多 Agent 路由
-- **M5 打磨** ✅ 失败率告警（M2）+ 成本统计（token/成本指标）；可选前端（进行中）
+- **M5 打磨** ✅ 失败率告警 + 成本统计（token/成本指标）+ 简单控制台（可选前端）

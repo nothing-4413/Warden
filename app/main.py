@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import FileResponse
 
 from .agent.planact import PlanActAgent
 from .agent.react import ReactAgent
@@ -46,7 +49,9 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Warden", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Warden", version="0.5.0", lifespan=lifespan)
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 @app.get("/health")
@@ -65,6 +70,34 @@ def metrics() -> Response:
     if not settings.metrics_enabled:
         raise HTTPException(status_code=404, detail="metrics disabled")
     return Response(content=metrics_text(), media_type="text/plain; version=0.0.4; charset=utf-8")
+
+
+@app.get("/", include_in_schema=False)
+def dashboard() -> FileResponse:
+    """简单控制台（M5 可选前端）：自包含 HTML，零构建。"""
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/api/v1/runs")
+def list_runs(limit: int = 20) -> list[dict]:
+    """最近运行记录（含 trace_id / 状态 / 尝试次数），供控制台展示。"""
+
+    def iso(ts: float | None) -> str | None:
+        return datetime.fromtimestamp(ts).isoformat(timespec="seconds") if ts else None
+
+    return [
+        {
+            "id": r.id,
+            "kind": r.kind,
+            "name": r.name,
+            "status": r.status,
+            "attempts": r.attempts,
+            "started_at": iso(r.started_at),
+            "finished_at": iso(r.finished_at),
+            "error": (r.error or "")[:200],
+        }
+        for r in store.list(limit=limit)
+    ]
 
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
