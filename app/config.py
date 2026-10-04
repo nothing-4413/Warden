@@ -60,6 +60,13 @@ class Settings:
     retry_backoff_s: float = float(os.getenv("WARDEN_RETRY_BACKOFF_S", "1.0"))
     metrics_enabled: bool = os.getenv("WARDEN_METRICS_ENABLED", "true").lower() in ("1", "true", "yes")
 
+    # 记忆 RAG（M3）
+    embedding_model: str = os.getenv("WARDEN_EMBEDDING_MODEL", "nomic-embed-text")
+    memory_db_path: str = os.getenv("WARDEN_MEMORY_DB_PATH", "data/memory.db")
+    chunk_size: int = int(os.getenv("WARDEN_CHUNK_SIZE", "600"))
+    chunk_overlap: int = int(os.getenv("WARDEN_CHUNK_OVERLAP", "100"))
+    retrieval_top_k: int = int(os.getenv("WARDEN_RETRIEVAL_TOP_K", "4"))
+
     @property
     def rss_source_list(self) -> list[str]:
         return [s.strip() for s in self.rss_sources.split(",") if s.strip()]

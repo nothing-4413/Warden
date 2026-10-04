@@ -4,9 +4,9 @@
 
 - 自研轻量 Harness（ReAct / PlanAct Agent 循环）
 - 工具注册表 + 插件化扩展
-- 记忆（RAG over 个人笔记）· MCP · 调度器（后续里程碑）
+- 记忆（RAG over 个人笔记）+ MCP + 调度器
 
-当前进度：**M2 已完成** —— 在 M1（调度器 + 3 定时任务）之上，加入完整 Harness：状态持久化（SQLite RunStore）、断点续跑、重试/幂等、trace_id 全链路追踪、Prometheus + Grafana 监控大盘与失败率告警。
+当前进度：**M3 已完成** —— 在 M2（完整 Harness：状态持久化/断点续跑/重试幂等/trace_id/Prometheus+Grafana 监控）之上，加入记忆层：RAG over 个人笔记（嵌入 + SQLite 向量库 + 分块索引 + 语义检索工具）。
 
 ## 目录结构
 
@@ -29,7 +29,13 @@ Warden/
 │   │   ├── registry.py     # 工具注册表
 │   │   └── builtin/
 │   │       ├── calculator.py      # 安全算术求值（ast 白名单，非 eval）
-│   │       └── datetime_tool.py   # 当前时间
+│   │       ├── datetime_tool.py   # 当前时间
+│   │       └── search_notes.py    # 语义检索个人笔记（RAG 记忆工具）
+│   ├── memory/                    # M3 记忆：RAG
+│   │   ├── embeddings.py  # OpenAI 兼容 /embeddings 客户端
+│   │   ├── vector_store.py# SQLite 向量库 + 余弦检索
+│   │   ├── indexer.py     # 笔记分块 + 索引
+│   │   └── retriever.py   # 查询 → 嵌入 → 检索
 │   ├── notify/
 │   │   ├── base.py         # Notifier 抽象
 │   │   ├── console.py      # 控制台通知
@@ -73,6 +79,11 @@ python -m app.cli chat "现在几点了？" --agent planact
 # 3b. 定时任务
 python -m app.cli tasks              # 列出任务
 python -m app.cli run news_digest    # 手动触发一次（需 LLM 在线）
+
+# 3c. 记忆（RAG）：索引个人笔记 + 语义检索
+# 先在 .env 设 WARDEN_NOTES_DIR=你的笔记目录，并 `ollama pull nomic-embed-text`
+python -m app.cli index-notes        # 建向量索引
+python -m app.cli search "上个月学了什么"   # 语义检索
 
 # 4. 跑 API
 uvicorn app.main:app --reload
@@ -145,11 +156,18 @@ docker compose up -d
 - **trace_id 全链路**（`app/harness/trace.py`）：`contextvars` 传 trace_id，子线程/子协程自动继承；`TraceFilter` 把它注入每条日志的 `[trace_id]` 段。
 - **监控指标**（`app/harness/metrics.py`）：`warden_runs_total`（按 kind/name/status）+ `warden_run_duration_seconds`，失败率 = error/(ok+error)。`metrics_enabled=false` 可关。
 
+## 核心设计（M3）
+
+- **嵌入**（`app/memory/embeddings.py`）：OpenAI 兼容 `/embeddings`（`httpx` 直连），对话模型与嵌入模型分离（如对话 `qwen2.5:7b` + 嵌入 `nomic-embed-text`）。
+- **向量库**（`app/memory/vector_store.py`）：SQLite 存向量（JSON float 数组）+ 暴力余弦相似度检索。个人笔记量级（数千 chunk）零外部服务即可，接口 `add/search` 留作换 pgvector/Milvus 只改这一处（与 RunStore 同思路）。
+- **分块**（`app/memory/indexer.py` 的 `chunk_text`）：先按空行切段落，贪心合并到 `chunk_size`，单段超长硬切带 `overlap`；chunk id 用 `sha1(文件路径:序号)`，重跑索引幂等（INSERT OR REPLACE）。
+- **检索工具**（`app/tools/builtin/search_notes.py`）：`make_search_notes_tool(retriever, top_k)` 生成 `search_notes` 工具，Agent 当用户问"我的笔记/过去想法"时自动调用；`build_default_registry(retriever=None)` 传 retriever 才注册（不传保持 M0 两个工具，零破坏）。
+
 ## 路线图
 
 - **M0 骨架** ✅ FastAPI + ReAct/PlanAct + 工具注册表 + 2 示例工具
 - **M1 动起来** ✅ APScheduler 调度器 + 3 个定时任务 + 通知器
 - **M2 Harness** ✅ 状态持久化 + 断点续跑 + 重试/幂等 + trace_id + Prometheus/Grafana 监控
-- **M3 记忆**：RAG over 个人笔记（pgvector/Milvus）
+- **M3 记忆** ✅ RAG over 个人笔记（嵌入 + SQLite 向量库 + 语义检索工具）
 - **M4 多 Agent + MCP**：检索/摘要/生成多 Agent，MCP 接外部工具
 - **M5 打磨**：失败率告警、成本统计、可选前端
