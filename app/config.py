@@ -1,0 +1,55 @@
+"""Warden 配置：从环境变量读取（可选加载 .env），全部有默认值。
+
+设计取舍：不引入 python-dotenv，用一个约 10 行的极简 loader；
+所有配置集中在此文件，新增开关只改这一处。
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+
+def _load_dotenv(path: str = ".env") -> None:
+    """极简 .env 加载：只处理 KEY=VALUE 行，不覆盖已存在的环境变量。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+    except FileNotFoundError:
+        pass
+
+
+# 在 Settings 定义之前加载，这样字段默认值能读到 .env 里的值
+_load_dotenv()
+
+
+@dataclass(frozen=True)
+class Settings:
+    # LLM（OpenAI 兼容接口；指向 Ollama 的 /v1 即本地模型）
+    llm_base_url: str = os.getenv("WARDEN_LLM_BASE_URL", "http://localhost:11434/v1")
+    llm_api_key: str = os.getenv("WARDEN_LLM_API_KEY", "ollama")
+    llm_model: str = os.getenv("WARDEN_LLM_MODEL", "qwen2.5:7b")
+    llm_temperature: float = float(os.getenv("WARDEN_LLM_TEMPERATURE", "0"))
+    llm_timeout_s: float = float(os.getenv("WARDEN_LLM_TIMEOUT_S", "120"))
+
+    # Agent 循环
+    agent_max_steps: int = int(os.getenv("WARDEN_AGENT_MAX_STEPS", "10"))
+
+    # API
+    api_host: str = os.getenv("WARDEN_API_HOST", "127.0.0.1")
+    api_port: int = int(os.getenv("WARDEN_API_PORT", "8000"))
+
+
+_settings: Settings | None = None
+
+
+def get_settings() -> Settings:
+    """进程内单例（M0 配置只读，够用；M2 引入持久化后再扩展）。"""
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
