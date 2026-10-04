@@ -43,6 +43,21 @@ class Settings:
     api_host: str = os.getenv("WARDEN_API_HOST", "127.0.0.1")
     api_port: int = int(os.getenv("WARDEN_API_PORT", "8000"))
 
+    # 调度与任务（M1）
+    notify_kind: str = os.getenv("WARDEN_NOTIFY_KIND", "console")  # console | file
+    report_dir: str = os.getenv("WARDEN_REPORT_DIR", "reports")
+    data_dir: str = os.getenv("WARDEN_DATA_DIR", "data")
+    rss_sources: str = os.getenv(
+        "WARDEN_RSS_SOURCES",
+        "https://news.ycombinator.com/rss,https://export.arxiv.org/rss/cs.AI",
+    )
+    notes_dir: str = os.getenv("WARDEN_NOTES_DIR", "")
+    repo_path: str = os.getenv("WARDEN_REPO_PATH", ".")
+
+    @property
+    def rss_source_list(self) -> list[str]:
+        return [s.strip() for s in self.rss_sources.split(",") if s.strip()]
+
 
 _settings: Settings | None = None
 
