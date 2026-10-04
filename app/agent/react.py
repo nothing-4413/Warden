@@ -40,6 +40,17 @@ Rules:
 """
 
 
+_RETRY_JSON_PROMPT = (
+    "Your previous reply was not valid JSON. "
+    "Reply with EXACTLY ONE valid JSON object — no code fences, no extra text."
+)
+
+_FORCE_FINAL_PROMPT = (
+    "You have reached the step limit. Based on the observations above, "
+    "give the best final answer you can, as plain text."
+)
+
+
 class ReactAgent(BaseAgent):
     name = "react"
 
@@ -55,6 +66,24 @@ class ReactAgent(BaseAgent):
             attempts=self.settings.retry_attempts,
             backoff_s=self.settings.retry_backoff_s,
         )
+
+    def _chat_json(self, messages: list[dict]) -> tuple[dict | None, str]:
+        """chat 后解析 JSON；解析失败时把错误反馈回模型自纠一次。
+
+        返回 (parsed, raw)：自纠仍失败时 parsed 为 None、raw 为最后一次原始输出。
+        """
+        raw = self._chat(messages)
+        try:
+            return extract_json(raw), raw
+        except ValueError:
+            pass
+        messages.append({"role": "assistant", "content": raw.strip()})
+        messages.append({"role": "user", "content": _RETRY_JSON_PROMPT})
+        raw = self._chat(messages)
+        try:
+            return extract_json(raw), raw
+        except ValueError:
+            return None, raw
 
     def _run(self, history: list[dict], record: RunRecord | None) -> AgentRunResult:
         return self._loop(self._messages(history), [], record, 0)
@@ -76,8 +105,16 @@ class ReactAgent(BaseAgent):
     def _loop(self, messages: list[dict], steps: list[AgentStep],
               record: RunRecord | None, start_index: int) -> AgentRunResult:
         for index in range(start_index, self.settings.agent_max_steps):
-            raw = self._chat(messages)
-            parsed = extract_json(raw)
+            parsed, raw = self._chat_json(messages)
+
+            if parsed is None:
+                # 自纠后仍解析不出 JSON：把原始文本当最终回答，避免死循环
+                answer = raw.strip()
+                s = AgentStep(index=index, thought=None, observation=answer)
+                steps.append(s)
+                self._persist_step(record, s, raw)
+                return AgentRunResult(answer=answer, steps=steps,
+                                      agent=self.name, model=self.llm.model)
 
             if "final_answer" in parsed:
                 s = AgentStep(index=index, thought=parsed.get("thought"),
@@ -108,11 +145,13 @@ class ReactAgent(BaseAgent):
             messages.append({"role": "assistant", "content": raw.strip()})
             messages.append({"role": "user", "content": f"Observation: {observation}"})
 
-        # 达到最大步数仍未给出 final_answer
-        last = steps[-1].observation if steps else "(none)"
-        answer = (
-            f"reached max steps ({self.settings.agent_max_steps}) without a final "
-            f"answer; last observation: {last}"
-        )
-        return AgentRunResult(answer=answer, steps=steps,
+        # 达到最大步数：强制收尾 —— 让模型基于已有观测给出最终回答
+        try:
+            final = self._chat(
+                messages + [{"role": "user", "content": _FORCE_FINAL_PROMPT}]).strip()
+        except Exception:
+            last = steps[-1].observation if steps else "(none)"
+            final = (f"reached max steps ({self.settings.agent_max_steps}) without a "
+                     f"final answer; last observation: {last}")
+        return AgentRunResult(answer=final, steps=steps,
                               agent=self.name, model=self.llm.model)
