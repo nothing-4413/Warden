@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 import httpx
@@ -22,6 +23,14 @@ class Usage:
     """一次 LLM 调用的 token 用量。"""
     prompt_tokens: int = 0
     completion_tokens: int = 0
+
+
+@dataclass
+class ToolCall:
+    """模型发起的一次原生工具调用（OpenAI function-calling 协议）。"""
+    id: str
+    name: str
+    arguments: dict
 
 
 class LLMClient:
@@ -43,12 +52,51 @@ class LLMClient:
 
         messages 元素形如 {"role": "system"|"user"|"assistant", "content": "..."}。
         """
-        url = f"{self._base_url}/chat/completions"
         payload = {
             "model": self._model,
             "messages": messages,
             "temperature": self._temperature if temperature is None else temperature,
         }
+        data = self._post(payload)
+        try:
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LLMError(f"unexpected LLM response shape: {data}") from exc
+        self._record_usage(data.get("usage") or {})
+        return content
+
+    def chat_with_tools(self, messages: list[dict],
+                        tools: list[dict]) -> tuple[str, list[ToolCall]]:
+        """原生 function calling：带 tools 请求，返回 (文本内容, 工具调用列表)。
+
+        模型二选一：返回 content（最终回答）或返回 tool_calls（要求执行工具）。
+        """
+        payload = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": self._temperature,
+            "tools": tools,
+        }
+        data = self._post(payload)
+        try:
+            msg = data["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LLMError(f"unexpected LLM response shape: {data}") from exc
+        self._record_usage(data.get("usage") or {})
+        content = msg.get("content") or ""
+        calls = []
+        for tc in msg.get("tool_calls") or []:
+            try:
+                args = json.loads(tc["function"].get("arguments") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+            calls.append(ToolCall(id=tc.get("id") or "", name=tc["function"]["name"],
+                                  arguments=args))
+        return content, calls
+
+    def _post(self, payload: dict) -> dict:
+        """发送 /chat/completions，返回解析后的 JSON；网络错误/非 200 抛 LLMError。"""
+        url = f"{self._base_url}/chat/completions"
         headers = {"Authorization": f"Bearer {self._api_key}"}
         try:
             resp = httpx.post(url, json=payload, headers=headers, timeout=self._timeout)
@@ -56,13 +104,7 @@ class LLMClient:
             raise LLMError(f"LLM request failed: {exc}") from exc
         if resp.status_code != 200:
             raise LLMError(f"LLM returned {resp.status_code}: {resp.text[:500]}")
-        data = resp.json()
-        try:
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise LLMError(f"unexpected LLM response shape: {data}") from exc
-        self._record_usage(data.get("usage") or {})
-        return content
+        return resp.json()
 
     def _record_usage(self, usage: dict) -> None:
         """把本次调用的 token 用量记入 last_usage，并按单价折算成本记入指标（M5）。"""

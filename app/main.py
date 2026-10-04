@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse
 
+from .agent.function_call import FunctionCallAgent
 from .agent.planact import PlanActAgent
 from .agent.react import ReactAgent
 from .config import get_settings
@@ -35,6 +36,7 @@ store = RunStore(settings.db_path)
 _agents = {
     "react": ReactAgent(settings, llm, registry, store=store),
     "planact": PlanActAgent(settings, llm, registry, store=store),
+    "function_call": FunctionCallAgent(settings, llm, registry, store=store),
 }
 
 notifier = get_notifier(settings)

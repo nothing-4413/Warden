@@ -1,7 +1,7 @@
 """命令行快速调试。
 
 用法：
-  python -m app.cli chat "12 * 7 + 3 等于多少？" [--agent react|planact]
+  python -m app.cli chat "12 * 7 + 3 等于多少？" [--agent react|planact|function_call]
   python -m app.cli tasks                       # 列出定时任务
   python -m app.cli run <task_name>             # 手动触发一次任务
   python -m app.cli index-notes                 # 索引个人笔记（RAG）
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 
+from .agent.function_call import FunctionCallAgent
 from .agent.orchestrator import Orchestrator
 from .agent.planact import PlanActAgent
 from .agent.react import ReactAgent
@@ -42,7 +43,8 @@ def _chat(query: str, agent_name: str) -> None:
     _embedder, mem_store, retriever = _build_memory(settings)
     registry = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
                                       min_score=settings.retrieval_min_score)
-    agent_cls = ReactAgent if agent_name == "react" else PlanActAgent
+    agent_cls = {"react": ReactAgent, "planact": PlanActAgent,
+                 "function_call": FunctionCallAgent}[agent_name]
     agent = agent_cls(settings, llm, registry, store=store)
 
     result = agent.run([{"role": "user", "content": query}])
@@ -161,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_chat = sub.add_parser("chat", help="对话式 Agent")
     p_chat.add_argument("query", help="user request")
-    p_chat.add_argument("--agent", choices=["react", "planact"], default="react")
+    p_chat.add_argument("--agent", choices=["react", "planact", "function_call"], default="react")
 
     sub.add_parser("tasks", help="列出定时任务")
 

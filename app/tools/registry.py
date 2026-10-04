@@ -31,6 +31,10 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return list(self._tools)
 
+    def all(self) -> list[Tool]:
+        """按注册顺序返回所有工具（供遍历渲染 tools 协议等）。"""
+        return list(self._tools.values())
+
     def __contains__(self, name: str) -> bool:
         return name in self._tools
 

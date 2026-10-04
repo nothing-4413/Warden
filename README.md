@@ -26,6 +26,7 @@ Warden/
 │   │   ├── base.py         # BaseAgent 抽象 + AgentStep/AgentRunResult + JSON 解析
 │   │   ├── react.py        # 自研 ReAct 循环
 │   │   ├── planact.py      # 自研 PlanAct 循环（Plan → Act → Summarize）
+│   │   ├── function_call.py # 自研原生 Function Calling 循环
 │   │   └── orchestrator.py # M4 多 Agent：路由到专家
 │   ├── tools/
 │   │   ├── base.py         # Tool 定义（pydantic 输入模型）
@@ -83,6 +84,7 @@ copy .env.example .env          # 按需改 WARDEN_LLM_*
 # 3. 跑 CLI 冒烟
 python -m app.cli chat "12 * 7 + 3 等于多少？"
 python -m app.cli chat "现在几点了？" --agent planact
+python -m app.cli chat "12 * 7 + 3 等于多少？" --agent function_call   # 原生工具调用
 
 # 3b. 定时任务
 python -m app.cli tasks              # 列出任务
@@ -148,6 +150,7 @@ docker compose up -d
 
 - **ReAct 循环**（`app/agent/react.py`）：Thought → Action → Observation 直到 Final Answer。输出契约为**单个 JSON 对象**二选一 —— `{"thought","action","action_input"}` 或 `{"thought","final_answer"}`。选 JSON 而非自由文本 `Action:` 解析，是因为本地小模型对 JSON 遵从度更高、解析更鲁棒（`extract_json` 容忍代码围栏与噪声）。健壮性：JSON 解析失败会把错误反馈回模型**自纠重试一次**；达到最大步数未收尾时，让模型基于已有观测**强制给出最终回答**（而非只报诊断）。
 - **PlanAct 循环**（`app/agent/planact.py`）：三步 —— ① Plan 让模型产出有序步骤列表（每步可选绑定工具+参数）；② Act 按序确定性执行；③ Summarize 汇总结果出最终答案。M0 用"规划期即固定工具调用"，可解释、无额外 LLM 调用。
+- **原生 Function Calling 循环**（`app/agent/function_call.py`）：把工具以 OpenAI `tools` 协议直接交给模型，模型原生返回 `tool_calls`（含 `tool_call_id` + 结构化 arguments），执行后以 `role:"tool"` 回填上下文。与 ReAct 的 JSON-in-prompt 路线并存，展示"prompt 级"与"协议级"两种工具调用方式。
 - **工具注册表**（`app/tools/registry.py`）：新增工具 = 写一个 `Tool` 并 `register`，核心循环零改动。工具输入用 pydantic 模型，同一模型既做运行时校验、又生成 JSON Schema 注入 prompt。
 - **安全 calculator**（`app/tools/builtin/calculator.py`）：不用 `eval`，改用 `ast` 解析 + 白名单节点，只允许四则/幂/取模/整除/括号。
 - **LLM 客户端**（`app/llm.py`）：不引入 `openai` SDK，`httpx` 直连 `/chat/completions`，`base_url` 指向哪就是哪。
@@ -193,7 +196,7 @@ docker compose up -d
 
 ## 路线图
 
-- **M0 骨架** ✅ FastAPI + ReAct/PlanAct + 工具注册表 + 2 示例工具
+- **M0 骨架** ✅ FastAPI + ReAct/PlanAct/Function Calling + 工具注册表 + 2 示例工具
 - **M1 动起来** ✅ APScheduler 调度器 + 3 个定时任务 + 通知器
 - **M2 Harness** ✅ 状态持久化 + 断点续跑 + 重试/幂等 + trace_id + Prometheus/Grafana 监控
 - **M3 记忆** ✅ RAG over 个人笔记（嵌入 + SQLite 向量库 + 语义检索工具）
