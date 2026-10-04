@@ -40,7 +40,8 @@ def _chat(query: str, agent_name: str) -> None:
     llm = LLMClient(settings)
     store = RunStore(settings.db_path)
     _embedder, mem_store, retriever = _build_memory(settings)
-    registry = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k)
+    registry = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
+                                      min_score=settings.retrieval_min_score)
     agent_cls = ReactAgent if agent_name == "react" else PlanActAgent
     agent = agent_cls(settings, llm, registry, store=store)
 
@@ -124,7 +125,8 @@ def _team(query: str) -> int:
     _embedder, mem_store, retriever = _build_memory(settings)
 
     # researcher：带 search_notes（RAG 记忆）+ 所有 MCP 工具
-    researcher_tools = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k)
+    researcher_tools = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
+                                              min_score=settings.retrieval_min_score)
     mcp_clients: list = []
     if settings.mcp_servers:
         try:

@@ -175,8 +175,23 @@ class BaseAgent(ABC):
         try:
             tool = self.tools.get(action)
         except ToolNotFoundError:
-            return f"error: unknown tool '{action}'. Available: {self.tools.names()}"
+            return self._truncate_observation(
+                f"error: unknown tool '{action}'. Available: {self.tools.names()}")
         try:
-            return tool.run(action_input)
+            result = tool.run(action_input)
         except Exception as exc:  # 工具内部报错回传给模型
-            return f"error: {type(exc).__name__}: {exc}"
+            return self._truncate_observation(f"error: {type(exc).__name__}: {exc}")
+        return self._truncate_observation(result)
+
+    def _truncate_observation(self, value: Any) -> Any:
+        """截断过长的工具观测，避免撑爆上下文窗口（上下文工程）。
+
+        只截断字符串（长文本都来自字符串结果，如 search_notes/MCP/错误信息）；
+        非字符串（如 calculator 返回的数字）保持原样，不影响既有行为。
+        """
+        limit = self.settings.max_observation_chars
+        if limit <= 0 or not isinstance(value, str):
+            return value
+        if len(value) <= limit:
+            return value
+        return value[:limit] + f"... [truncated, {len(value)} chars total]"

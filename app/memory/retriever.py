@@ -10,6 +10,8 @@ class Retriever:
         self.embedder = embedder
         self.store = store
 
-    def retrieve(self, query: str, k: int = 4) -> list[Chunk]:
+    def retrieve(self, query: str, k: int = 4, min_score: float = 0.0) -> list[Chunk]:
         emb = self.embedder.embed([query])[0]
-        return self.store.search(emb, k=k)
+        chunks = self.store.search(emb, k=k)
+        # 阈值过滤：低相似度片段会稀释上下文，直接丢弃（上下文工程）
+        return [c for c in chunks if c.score >= min_score]

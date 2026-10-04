@@ -70,3 +70,20 @@ def test_default_registry_has_no_search_notes_without_retriever():
     registry = build_default_registry()
     assert "search_notes" not in registry.names()
     assert registry.names() == ["calculator", "get_current_time"]
+
+
+def test_retriever_min_score_filters_low_similarity(tmp_path):
+    store = VectorStore(str(tmp_path / "mem.db"))
+
+    class FixedEmbedder:
+        """查询恒返回 [1,0]，与向量 [1,0] 余弦=1、与 [0,1] 余弦=0，结果确定。"""
+
+        def embed(self, texts):
+            return [[1.0, 0.0] for _ in texts]
+
+    store.add("a", "n1.md", "match", [1.0, 0.0])
+    store.add("b", "n2.md", "orthogonal", [0.0, 1.0])
+    retriever = Retriever(FixedEmbedder(), store)
+    chunks = retriever.retrieve("anything", k=5, min_score=0.5)
+    assert [c.id for c in chunks] == ["a"]
+    store.close()

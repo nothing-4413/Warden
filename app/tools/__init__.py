@@ -16,11 +16,12 @@ __all__ = [
 ]
 
 
-def build_default_registry(retriever=None, top_k: int = 4) -> ToolRegistry:
+def build_default_registry(retriever=None, top_k: int = 4,
+                           min_score: float = 0.0) -> ToolRegistry:
     """默认工具注册表。传入 retriever 时额外注册 search_notes（RAG 记忆）。"""
     registry = ToolRegistry()
     registry.register(calculator_tool)
     registry.register(datetime_tool)
     if retriever is not None:
-        registry.register(make_search_notes_tool(retriever, top_k))
+        registry.register(make_search_notes_tool(retriever, top_k, min_score))
     return registry

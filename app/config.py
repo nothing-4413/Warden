@@ -39,6 +39,8 @@ class Settings:
 
     # Agent 循环
     agent_max_steps: int = int(os.getenv("WARDEN_AGENT_MAX_STEPS", "10"))
+    # 工具观测截断上限（上下文工程：防止长工具输出撑爆上下文窗口，0 = 不截断）
+    max_observation_chars: int = int(os.getenv("WARDEN_MAX_OBSERVATION_CHARS", "2000"))
 
     # API
     api_host: str = os.getenv("WARDEN_API_HOST", "127.0.0.1")
@@ -67,6 +69,8 @@ class Settings:
     chunk_size: int = int(os.getenv("WARDEN_CHUNK_SIZE", "600"))
     chunk_overlap: int = int(os.getenv("WARDEN_CHUNK_OVERLAP", "100"))
     retrieval_top_k: int = int(os.getenv("WARDEN_RETRIEVAL_TOP_K", "4"))
+    # 检索相似度阈值：低于该分数的片段不注入上下文（0 = 不过滤）
+    retrieval_min_score: float = float(os.getenv("WARDEN_RETRIEVAL_MIN_SCORE", "0"))
 
     # MCP（M4）：JSON 数组 [{name, command:[...]}]
     mcp_servers_json: str = os.getenv("WARDEN_MCP_SERVERS", "")

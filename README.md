@@ -175,7 +175,8 @@ docker compose up -d
 - **嵌入**（`app/memory/embeddings.py`）：OpenAI 兼容 `/embeddings`（`httpx` 直连），对话模型与嵌入模型分离（如对话 `qwen2.5:7b` + 嵌入 `nomic-embed-text`）。
 - **向量库**（`app/memory/vector_store.py`）：SQLite 存向量（JSON float 数组）+ 暴力余弦相似度检索。个人笔记量级（数千 chunk）零外部服务即可，接口 `add/search` 留作换 pgvector/Milvus 只改这一处（与 RunStore 同思路）。
 - **分块**（`app/memory/indexer.py` 的 `chunk_text`）：先按空行切段落，贪心合并到 `chunk_size`，单段超长硬切带 `overlap`；chunk id 用 `sha1(文件路径:序号)`，重跑索引幂等（INSERT OR REPLACE）。
-- **检索工具**（`app/tools/builtin/search_notes.py`）：`make_search_notes_tool(retriever, top_k)` 生成 `search_notes` 工具，Agent 当用户问"我的笔记/过去想法"时自动调用；`build_default_registry(retriever=None)` 传 retriever 才注册（不传保持 M0 两个工具，零破坏）。
+- **检索工具**（`app/tools/builtin/search_notes.py`）：`make_search_notes_tool(retriever, top_k, min_score)` 生成 `search_notes` 工具，Agent 当用户问"我的笔记/过去想法"时自动调用；`build_default_registry(retriever=None, ...)` 传 retriever 才注册（不传保持 M0 两个工具，零破坏）。
+- **上下文工程**：① `retrieval_min_score` 阈值过滤低相似度片段，避免无关内容稀释上下文；② `BaseAgent._truncate_observation` 按 `max_observation_chars` 截断过长工具输出，防止撑爆上下文窗口；③ `search_notes` 返回 `[doc_id]` 并引导 Agent 在答案中引用出处。
 
 ## 核心设计（M4）
 

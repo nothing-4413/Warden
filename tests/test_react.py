@@ -38,3 +38,25 @@ def test_react_unknown_tool_is_reported_back():
 
     assert "unknown tool" in str(result.steps[0].observation)
     assert result.answer == "cannot do it"
+
+
+def test_observation_is_truncated():
+    """长工具输出被截断，防止撑爆上下文窗口（上下文工程）。"""
+    from pydantic import BaseModel
+
+    from app.llm import LLMClient
+    from app.tools import Tool, ToolRegistry
+
+    class NoInput(BaseModel):
+        pass
+
+    registry = ToolRegistry()
+    registry.register(Tool(name="long", description="returns a long string",
+                           input_model=NoInput, func=lambda: "x" * 5000))
+    settings = Settings(max_observation_chars=50)
+    agent = ReactAgent(settings, LLMClient(settings), registry)
+    obs = agent._execute("long", {})
+    assert isinstance(obs, str)
+    assert obs.startswith("x" * 50)
+    assert len(obs) < 100
+    assert "truncated" in obs
