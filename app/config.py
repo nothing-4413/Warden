@@ -54,6 +54,12 @@ class Settings:
     notes_dir: str = os.getenv("WARDEN_NOTES_DIR", "")
     repo_path: str = os.getenv("WARDEN_REPO_PATH", ".")
 
+    # Harness（M2）
+    db_path: str = os.getenv("WARDEN_DB_PATH", "data/warden.db")
+    retry_attempts: int = int(os.getenv("WARDEN_RETRY_ATTEMPTS", "3"))
+    retry_backoff_s: float = float(os.getenv("WARDEN_RETRY_BACKOFF_S", "1.0"))
+    metrics_enabled: bool = os.getenv("WARDEN_METRICS_ENABLED", "true").lower() in ("1", "true", "yes")
+
     @property
     def rss_source_list(self) -> list[str]:
         return [s.strip() for s in self.rss_sources.split(",") if s.strip()]
