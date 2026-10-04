@@ -71,6 +71,10 @@ class Settings:
     # MCP（M4）：JSON 数组 [{name, command:[...]}]
     mcp_servers_json: str = os.getenv("WARDEN_MCP_SERVERS", "")
 
+    # 成本统计（M5）：单价 USD / 1M tokens（默认 0 = 本地模型免费）
+    llm_input_price_per_mtok: float = float(os.getenv("WARDEN_LLM_INPUT_PRICE_PER_1M", "0"))
+    llm_output_price_per_mtok: float = float(os.getenv("WARDEN_LLM_OUTPUT_PRICE_PER_1M", "0"))
+
     @property
     def rss_source_list(self) -> list[str]:
         return [s.strip() for s in self.rss_sources.split(",") if s.strip()]

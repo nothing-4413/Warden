@@ -5,22 +5,34 @@
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import httpx
 
 from .config import Settings
+from .harness import compute_cost, record_llm_usage
 
 
 class LLMError(Exception):
     """LLM 调用失败（网络错误 / 4xx / 5xx）。"""
 
 
+@dataclass
+class Usage:
+    """一次 LLM 调用的 token 用量。"""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+
 class LLMClient:
     def __init__(self, settings: Settings) -> None:
+        self._settings = settings
         self._base_url = settings.llm_base_url.rstrip("/")
         self._api_key = settings.llm_api_key
         self._model = settings.llm_model
         self._temperature = settings.llm_temperature
         self._timeout = settings.llm_timeout_s
+        self.last_usage: Usage | None = None
 
     @property
     def model(self) -> str:
@@ -46,6 +58,20 @@ class LLMClient:
             raise LLMError(f"LLM returned {resp.status_code}: {resp.text[:500]}")
         data = resp.json()
         try:
-            return data["choices"][0]["message"]["content"]
+            content = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError(f"unexpected LLM response shape: {data}") from exc
+        self._record_usage(data.get("usage") or {})
+        return content
+
+    def _record_usage(self, usage: dict) -> None:
+        """把本次调用的 token 用量记入 last_usage，并按单价折算成本记入指标（M5）。"""
+        self.last_usage = Usage(
+            prompt_tokens=int(usage.get("prompt_tokens") or 0),
+            completion_tokens=int(usage.get("completion_tokens") or 0),
+        )
+        if self._settings.metrics_enabled:
+            cost = compute_cost(self._settings, self.last_usage.prompt_tokens,
+                                self.last_usage.completion_tokens)
+            record_llm_usage(self._model, self.last_usage.prompt_tokens,
+                             self.last_usage.completion_tokens, cost)

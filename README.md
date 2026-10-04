@@ -6,7 +6,7 @@
 - 工具注册表 + 插件化扩展
 - 记忆（RAG over 个人笔记）+ MCP + 调度器
 
-当前进度：**M4 已完成** —— 在 M3（记忆层：RAG over 个人笔记）之上，加入 MCP 客户端（stdio JSON-RPC，接外部工具）与多 Agent 编排器（路由到专家）。
+当前进度：**M5 进行中** —— 在 M4（MCP + 多 Agent 编排）之上，加入 LLM 成本统计（token 用量 + 按模型单价折算成本，暴露 Prometheus 指标）；失败率告警已在 M2 落地。
 
 ## 目录结构
 
@@ -187,4 +187,4 @@ docker compose up -d
 - **M2 Harness** ✅ 状态持久化 + 断点续跑 + 重试/幂等 + trace_id + Prometheus/Grafana 监控
 - **M3 记忆** ✅ RAG over 个人笔记（嵌入 + SQLite 向量库 + 语义检索工具）
 - **M4 多 Agent + MCP** ✅ MCP 客户端（stdio JSON-RPC）+ 工具适配 + Orchestrator 多 Agent 路由
-- **M5 打磨**：失败率告警、成本统计、可选前端
+- **M5 打磨** ✅ 失败率告警（M2）+ 成本统计（token/成本指标）；可选前端（进行中）
