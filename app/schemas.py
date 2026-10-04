@@ -14,6 +14,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1)
     agent: Literal["react", "planact"] = "react"
+    request_id: str | None = None  # 幂等键：同 id 重复请求直接回放已存结果
 
 
 class StepView(BaseModel):

@@ -1,16 +1,18 @@
-"""调度器运行器：APScheduler 装配 + 单次运行入口。
+"""调度器运行器：APScheduler 装配 + 单次运行入口（含 trace_id/持久化/重试）。
 
 时间用本地时区（stdlib 取 tzinfo，不引入 tzlocal/pytz）。
 """
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from ..harness import RunRecord, new_trace_id, trace_span, with_retry
 from .base import BaseTask, Services, TaskResult
 from .registry import TaskRegistry
 
@@ -45,15 +47,37 @@ def build_scheduler(registry: TaskRegistry, ctx: Services) -> BackgroundSchedule
 
 
 def _run_task(task: BaseTask, ctx: Services) -> TaskResult:
-    log.info("task start: %s", task.name)
-    try:
-        result = task.run(ctx)
-    except Exception as exc:  # 任务异常兜底，不让调度线程崩溃
-        log.exception("task failed: %s", task.name)
-        result = TaskResult(task=task.name, status="error", summary=str(exc), error=str(exc))
-    _notify(task, ctx, result)
-    log.info("task done: %s -> %s", task.name, result.status)
-    return result
+    tid = new_trace_id()
+    with trace_span(tid):
+        log.info("task start: %s", task.name)
+        record = None
+        if ctx.store is not None:
+            record = RunRecord(id=tid, kind="task", name=task.name)
+            ctx.store.start(record)
+
+        attempts: list[int] = []
+        try:
+            result = with_retry(
+                lambda: task.run(ctx),
+                attempts=ctx.settings.retry_attempts,
+                backoff_s=ctx.settings.retry_backoff_s,
+                on_attempt=attempts.append,
+            )
+        except Exception as exc:  # 重试仍失败：兜底，不让调度线程崩溃
+            log.exception("task failed: %s", task.name)
+            result = TaskResult(task=task.name, status="error", summary=str(exc), error=str(exc))
+
+        if record is not None:
+            record.status = result.status
+            record.output = result.summary
+            record.error = result.error
+            record.attempts = len(attempts)
+            record.finished_at = time.time()
+            ctx.store.update(record)
+
+        _notify(task, ctx, result)
+        log.info("task done: %s -> %s", task.name, result.status)
+        return result
 
 
 def _notify(task: BaseTask, ctx: Services, result: TaskResult) -> None:

@@ -12,6 +12,8 @@ import argparse
 from .agent.planact import PlanActAgent
 from .agent.react import ReactAgent
 from .config import get_settings
+from .harness import configure_logging
+from .harness.run_store import RunStore
 from .llm import LLMClient
 from .notify import get_notifier
 from .scheduler import Services, TaskNotFoundError, run_once
@@ -22,15 +24,17 @@ from .tools import build_default_registry
 def _chat(query: str, agent_name: str) -> None:
     settings = get_settings()
     llm = LLMClient(settings)
+    store = RunStore(settings.db_path)
     registry = build_default_registry()
     agent_cls = ReactAgent if agent_name == "react" else PlanActAgent
-    agent = agent_cls(settings, llm, registry)
+    agent = agent_cls(settings, llm, registry, store=store)
 
     result = agent.run([{"role": "user", "content": query}])
     print(f"[{result.agent}|{result.model}] {result.answer}")
     for s in result.steps:
         label = s.action or "(answer)"
         print(f"  step {s.index}: {s.thought or ''} -> {label} -> {s.observation}")
+    store.close()
 
 
 def _list_tasks() -> None:
@@ -44,18 +48,21 @@ def _run_task(name: str) -> int:
     settings = get_settings()
     llm = LLMClient(settings)
     notifier = get_notifier(settings)
+    store = RunStore(settings.db_path)
     reg = build_default_task_registry(settings)
-    ctx = Services(settings, llm, notifier)
+    ctx = Services(settings, llm, notifier, store=store)
     try:
         result = run_once(reg, ctx, name)
     except TaskNotFoundError as exc:
         print(f"错误：{exc}")
         return 1
     print(f"[{result.task}] {result.status}: {result.summary}")
+    store.close()
     return 0 if result.status != "error" else 1
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_logging()
     parser = argparse.ArgumentParser(prog="warden", description="Warden CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..config import Settings
+from ..harness import RunStore
 from ..llm import LLMClient
 from ..notify import Notifier
 
@@ -21,10 +22,11 @@ class TaskResult:
 
 @dataclass
 class Services:
-    """任务运行所需的共享服务（M1 只读上下文；M2 加持久化/追踪后扩展）。"""
+    """任务运行所需的共享服务。store 为 None 时任务运行不落库。"""
     settings: Settings
     llm: LLMClient
     notifier: Notifier
+    store: RunStore | None = None
 
 
 class BaseTask(ABC):

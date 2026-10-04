@@ -24,6 +24,7 @@ class RunRecord:
     name: str  # agent 名或 task 名
     status: str = STATUS_RUNNING
     input: Any = None
+    meta: dict = field(default_factory=dict)  # 断点续跑需要的额外状态（如 PlanAct 的 plan）
     output: str | None = None
     error: str | None = None
     steps: list[dict] = field(default_factory=list)
@@ -51,6 +52,7 @@ class RunStore:
                 name TEXT NOT NULL,
                 status TEXT NOT NULL,
                 input TEXT,
+                meta TEXT,
                 output TEXT,
                 error TEXT,
                 steps TEXT,
@@ -64,16 +66,17 @@ class RunStore:
 
     def start(self, run: RunRecord) -> None:
         self._conn.execute(
-            "INSERT INTO runs (id, kind, name, status, input, output, error, steps, attempts, started_at, finished_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO runs (id, kind, name, status, input, meta, output, error, steps, attempts, started_at, finished_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             self._tuple(run),
         )
         self._conn.commit()
 
     def update(self, run: RunRecord) -> None:
         self._conn.execute(
-            "UPDATE runs SET status=?, output=?, error=?, steps=?, attempts=?, finished_at=? WHERE id=?",
-            (run.status, run.output, run.error, self._dump(run.steps), run.attempts, run.finished_at, run.id),
+            "UPDATE runs SET status=?, output=?, error=?, steps=?, meta=?, attempts=?, finished_at=? WHERE id=?",
+            (run.status, run.output, run.error, self._dump(run.steps), self._dump(run.meta),
+             run.attempts, run.finished_at, run.id),
         )
         self._conn.commit()
 
@@ -103,8 +106,8 @@ class RunStore:
     def _tuple(run: RunRecord) -> tuple:
         return (
             run.id, run.kind, run.name, run.status, RunStore._dump(run.input),
-            run.output, run.error, RunStore._dump(run.steps), run.attempts,
-            run.started_at, run.finished_at,
+            RunStore._dump(run.meta), run.output, run.error, RunStore._dump(run.steps),
+            run.attempts, run.started_at, run.finished_at,
         )
 
     @staticmethod
@@ -119,7 +122,7 @@ class RunStore:
 
         return RunRecord(
             id=row["id"], kind=row["kind"], name=row["name"], status=row["status"],
-            input=_load(row["input"]), output=row["output"], error=row["error"],
-            steps=_load(row["steps"]) or [], attempts=row["attempts"],
+            input=_load(row["input"]), meta=_load(row["meta"]) or {}, output=row["output"],
+            error=row["error"], steps=_load(row["steps"]) or [], attempts=row["attempts"],
             started_at=row["started_at"], finished_at=row["finished_at"],
         )
