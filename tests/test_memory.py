@@ -18,6 +18,18 @@ class FakeEmbedder:
         return out
 
 
+class FakeLLM:
+    """检索增强用假 LLM：固定返回一句话/一个 JSON，并记录调用（零网络）。"""
+
+    def __init__(self, response: str):
+        self.response = response
+        self.calls: list = []
+
+    def chat(self, messages):
+        self.calls.append(messages)
+        return self.response
+
+
 def test_chunk_text_splits_and_merges():
     text = "第一段。" * 50 + "\n\n" + "第二段。" * 50
     chunks = chunk_text(text, chunk_size=200, overlap=20)
@@ -86,4 +98,44 @@ def test_retriever_min_score_filters_low_similarity(tmp_path):
     retriever = Retriever(FixedEmbedder(), store)
     chunks = retriever.retrieve("anything", k=5, min_score=0.5)
     assert [c.id for c in chunks] == ["a"]
+    store.close()
+
+
+def test_retriever_rewrites_query_when_enabled(tmp_path):
+    """检索增强：rewrite=True 时先用 LLM 改写查询再嵌入。"""
+    store = VectorStore(str(tmp_path / "mem.db"))
+
+    class RecordingEmbedder:
+        def __init__(self):
+            self.queries: list = []
+
+        def embed(self, texts):
+            self.queries.extend(texts)
+            return [[1.0, 0.0] for _ in texts]
+
+    embedder = RecordingEmbedder()
+    store.add("a", "n1.md", "warden agent framework", [1.0, 0.0])
+    llm = FakeLLM("warden personal multi-agent system")
+    retriever = Retriever(embedder, store, llm=llm)
+    retriever.retrieve("warden", k=1, rewrite=True)
+    assert embedder.queries[-1] == "warden personal multi-agent system"
+    store.close()
+
+
+def test_retriever_reranks_candidates(tmp_path):
+    """检索增强：rerank=True 时按 LLM 给出的顺序重排 top-k。"""
+    store = VectorStore(str(tmp_path / "mem.db"))
+
+    class FixedEmbedder:
+        def embed(self, texts):
+            return [[1.0, 0.0, 0.0] for _ in texts]
+
+    store.add("a", "n1.md", "alpha", [1.0, 0.0, 0.0])
+    store.add("b", "n2.md", "beta", [0.0, 1.0, 0.0])
+    store.add("c", "n3.md", "gamma", [0.0, 0.0, 1.0])
+    llm = FakeLLM('{"ranked": [3, 1, 2]}')
+    retriever = Retriever(FixedEmbedder(), store, llm=llm)
+    chunks = retriever.retrieve("anything", k=2, rerank=True)
+    # 自然相似度顺序是 a 最前（b/c 并列），LLM 重排后 top-2 应为 c、a
+    assert [c.id for c in chunks] == ["c", "a"]
     store.close()

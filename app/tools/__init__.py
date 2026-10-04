@@ -19,17 +19,20 @@ __all__ = [
 
 
 def build_default_registry(retriever=None, top_k: int = 4,
-                           min_score: float = 0.0, indexer=None) -> ToolRegistry:
+                           min_score: float = 0.0, indexer=None,
+                           rewrite: bool = False, rerank: bool = False) -> ToolRegistry:
     """默认工具注册表。
 
     传入 retriever 时额外注册 search_notes（RAG 记忆的"读"）；
     传入 indexer 时额外注册 save_note（RAG 记忆的"写"）。二者可独立开关。
+    rewrite/rerank 控制 search_notes 的检索增强（查询改写 / LLM 重排）。
     """
     registry = ToolRegistry()
     registry.register(calculator_tool)
     registry.register(datetime_tool)
     if retriever is not None:
-        registry.register(make_search_notes_tool(retriever, top_k, min_score))
+        registry.register(make_search_notes_tool(retriever, top_k, min_score,
+                                                 rewrite, rerank))
     if indexer is not None:
         registry.register(make_save_note_tool(indexer))
     return registry

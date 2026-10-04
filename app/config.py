@@ -77,6 +77,9 @@ class Settings:
     retrieval_top_k: int = int(os.getenv("WARDEN_RETRIEVAL_TOP_K", "4"))
     # 检索相似度阈值：低于该分数的片段不注入上下文（0 = 不过滤）
     retrieval_min_score: float = float(os.getenv("WARDEN_RETRIEVAL_MIN_SCORE", "0"))
+    # 检索增强：检索前用 LLM 改写查询提升召回、检索后用 LLM 重排 top-k 提升精度（各多一次 LLM 调用）
+    rag_rewrite_enabled: bool = os.getenv("WARDEN_RAG_REWRITE_ENABLED", "false").lower() in ("1", "true", "yes")
+    rag_rerank_enabled: bool = os.getenv("WARDEN_RAG_RERANK_ENABLED", "false").lower() in ("1", "true", "yes")
 
     # MCP（M4）：JSON 数组 [{name, command:[...]}]
     mcp_servers_json: str = os.getenv("WARDEN_MCP_SERVERS", "")

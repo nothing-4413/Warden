@@ -32,21 +32,26 @@ from .tasks import build_default_task_registry
 from .tools import ToolRegistry, build_default_registry
 
 
-def _build_memory(settings):
-    """建记忆组件：embedder / 向量库 / 检索器（读）/ 索引器（写）。"""
+def _build_memory(settings, llm=None):
+    """建记忆组件：embedder / 向量库 / 检索器（读）/ 索引器（写）。
+
+    llm 可选：传入后检索器支持查询改写 + 重排（检索增强）。
+    """
     embedder = EmbeddingClient(settings)
     store = VectorStore(settings.memory_db_path)
     indexer = NotesIndexer(settings, embedder, store)
-    return embedder, store, Retriever(embedder, store), indexer
+    return embedder, store, Retriever(embedder, store, llm=llm), indexer
 
 
 def _chat(query: str, agent_name: str) -> None:
     settings = get_settings()
     llm = LLMClient(settings)
     store = RunStore(settings.db_path)
-    _embedder, mem_store, retriever, indexer = _build_memory(settings)
+    _embedder, mem_store, retriever, indexer = _build_memory(settings, llm=llm)
     registry = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
-                                      min_score=settings.retrieval_min_score, indexer=indexer)
+                                      min_score=settings.retrieval_min_score, indexer=indexer,
+                                      rewrite=settings.rag_rewrite_enabled,
+                                      rerank=settings.rag_rerank_enabled)
     agent_cls = {"react": ReactAgent, "planact": PlanActAgent,
                  "function_call": FunctionCallAgent}[agent_name]
     agent = agent_cls(settings, llm, registry, store=store)
@@ -98,8 +103,11 @@ def _index_notes() -> int:
 
 def _search_notes(query: str) -> None:
     settings = get_settings()
-    _embedder, store, retriever, _indexer = _build_memory(settings)
-    chunks = retriever.retrieve(query, k=settings.retrieval_top_k)
+    llm = LLMClient(settings)
+    _embedder, store, retriever, _indexer = _build_memory(settings, llm=llm)
+    chunks = retriever.retrieve(query, k=settings.retrieval_top_k,
+                                rewrite=settings.rag_rewrite_enabled,
+                                rerank=settings.rag_rerank_enabled)
     if not chunks:
         print("没有在个人笔记里找到相关内容。")
     for c in chunks:
@@ -127,11 +135,13 @@ def _team(query: str) -> int:
     settings = get_settings()
     llm = LLMClient(settings)
     store = RunStore(settings.db_path)
-    _embedder, mem_store, retriever, indexer = _build_memory(settings)
+    _embedder, mem_store, retriever, indexer = _build_memory(settings, llm=llm)
 
     # researcher：带 search_notes/save_note（RAG 记忆）+ 所有 MCP 工具
     researcher_tools = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
-                                              min_score=settings.retrieval_min_score, indexer=indexer)
+                                              min_score=settings.retrieval_min_score, indexer=indexer,
+                                              rewrite=settings.rag_rewrite_enabled,
+                                              rerank=settings.rag_rerank_enabled)
     mcp_clients: list = []
     if settings.mcp_servers:
         try:
@@ -164,10 +174,12 @@ def _research(query: str) -> int:
     settings = get_settings()
     llm = LLMClient(settings)
     store = RunStore(settings.db_path)
-    _embedder, mem_store, retriever, indexer = _build_memory(settings)
+    _embedder, mem_store, retriever, indexer = _build_memory(settings, llm=llm)
 
     researcher_tools = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
-                                              min_score=settings.retrieval_min_score, indexer=indexer)
+                                              min_score=settings.retrieval_min_score, indexer=indexer,
+                                              rewrite=settings.rag_rewrite_enabled,
+                                              rerank=settings.rag_rerank_enabled)
     mcp_clients: list = []
     if settings.mcp_servers:
         try:

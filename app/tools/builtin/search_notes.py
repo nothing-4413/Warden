@@ -15,9 +15,11 @@ class SearchNotesInput(BaseModel):
 
 
 def make_search_notes_tool(retriever: Retriever, top_k: int = 4,
-                           min_score: float = 0.0) -> Tool:
+                           min_score: float = 0.0, rewrite: bool = False,
+                           rerank: bool = False) -> Tool:
     def _search(query: str) -> str:
-        chunks = retriever.retrieve(query, k=top_k, min_score=min_score)
+        chunks = retriever.retrieve(query, k=top_k, min_score=min_score,
+                                    rewrite=rewrite, rerank=rerank)
         if not chunks:
             return "没有在个人笔记里找到相关内容。"
         lines = [f"[{c.doc_id}] (score={c.score:.2f})\n{c.text}" for c in chunks]

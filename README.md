@@ -40,7 +40,7 @@ Warden/
 │   │   ├── embeddings.py  # OpenAI 兼容 /embeddings 客户端
 │   │   ├── vector_store.py# SQLite 向量库 + 余弦检索
 │   │   ├── indexer.py     # 笔记分块 + 索引
-│   │   └── retriever.py   # 查询 → 嵌入 → 检索
+│   │   └── retriever.py   # 查询 → 嵌入 → 检索（可选查询改写 + LLM 重排）
 │   ├── mcp/                      # M4 MCP 客户端
 │   │   ├── client.py     # stdio JSON-RPC 客户端
 │   │   ├── tools.py      # MCP 工具 → Warden Tool 适配
@@ -183,6 +183,7 @@ docker compose up -d
 - **检索工具**（`app/tools/builtin/search_notes.py`）：`make_search_notes_tool(retriever, top_k, min_score)` 生成 `search_notes` 工具，Agent 当用户问"我的笔记/过去想法"时自动调用；`build_default_registry(retriever=None, ...)` 传 retriever 才注册（不传保持 M0 两个工具，零破坏）。
 - **记忆写回**（`app/tools/builtin/save_note.py`）：`make_save_note_tool(indexer)` 生成 `save_note` 工具，Agent 在会话中得出重要结论/决策时主动写入（走 `NotesIndexer.index_text`：分块 → 嵌入 → 入库，每条记忆独立 `doc_id=note/{topic}/{uuid}` 防冲突），之后（含下一次会话）可用 `search_notes` 检索到 —— 长期记忆读 + 写闭环。`build_default_registry(..., indexer=None)` 传 indexer 才注册。
 - **上下文工程**：① `retrieval_min_score` 阈值过滤低相似度片段，避免无关内容稀释上下文；② `BaseAgent._truncate_observation` 按 `max_observation_chars` 截断过长工具输出，防止撑爆上下文窗口；③ `search_notes` 返回 `[doc_id]` 并引导 Agent 在答案中引用出处；④ `BaseAgent._history_with_summary` 多轮上下文窗口——历史超过 `context_max_messages` 时把最旧消息压成一段摘要（滑动窗口 + 摘要压缩，摘要失败退化为纯窗口），防止多轮对话撑爆本地模型上下文。
+- **检索增强（RAG 进阶）**（`app/memory/retriever.py`）：两级管线"召回 + 精排"。① 查询改写——检索前用 LLM 把用户口语查询改写成更具体、关键词更丰富的检索式（提升召回），`Retriever(embedder, store, llm=llm)` 传入 llm 后用 `retrieve(..., rewrite=True)`；② LLM 重排——检索后先取 `k*2` 候选，再让 LLM 按相关性精排挑出最相关的 `k` 条（提升精度），`retrieve(..., rerank=True)`。二者都由 `WARDEN_RAG_REWRITE_ENABLED` / `WARDEN_RAG_RERANK_ENABLED` 控制（默认关闭，各多一次 LLM 调用），失败自动回退到原查询/原相似度顺序，不阻塞检索。
 
 ## 核心设计（M4）
 

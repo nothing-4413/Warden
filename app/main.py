@@ -29,10 +29,12 @@ settings = get_settings()
 llm = LLMClient(settings)
 embedder = EmbeddingClient(settings)
 memory_store = VectorStore(settings.memory_db_path)
-retriever = Retriever(embedder, memory_store)
+retriever = Retriever(embedder, memory_store, llm=llm)
 indexer = NotesIndexer(settings, embedder, memory_store)
 registry = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
-                                  min_score=settings.retrieval_min_score, indexer=indexer)
+                                  min_score=settings.retrieval_min_score, indexer=indexer,
+                                  rewrite=settings.rag_rewrite_enabled,
+                                  rerank=settings.rag_rerank_enabled)
 store = RunStore(settings.db_path)
 _agents = {
     "react": ReactAgent(settings, llm, registry, store=store),
