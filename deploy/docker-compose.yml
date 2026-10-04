@@ -1,0 +1,19 @@
+# M2 监控大盘：Prometheus（采集 /metrics + 失败率告警）+ Grafana（可视化）。
+# 用法：先启动 Warden 应用（uvicorn app.main:app），再 `docker compose up -d`。
+#   - Prometheus: http://localhost:9090
+#   - Grafana:    http://localhost:3000  （admin / admin，首次登录会要求改密）
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..config import Settings
-from ..harness import RunRecord, RunStore, STATUS_ERROR, STATUS_OK, new_trace_id
+from ..harness import RunRecord, RunStore, STATUS_ERROR, STATUS_OK, new_trace_id, record_run
 from ..llm import LLMClient
 from ..tools import ToolNotFoundError, ToolRegistry
 
@@ -82,24 +82,30 @@ class BaseAgent(ABC):
 
     # ---- 对外入口：持久化 + 状态收尾 ----
     def run(self, history: list[dict], trace_id: str | None = None) -> AgentRunResult:
+        started = time.time()
         record = self._begin("chat", history, trace_id)
         try:
             result = self._run(history, record)
             self._finish_ok(record, result)
+            self._record_metrics("chat", "ok", started)
             return result
         except Exception as exc:
             self._finish_error(record, exc)
+            self._record_metrics("chat", "error", started)
             raise
 
     def resume(self, run_id: str) -> AgentRunResult:
         """从已持久化的断点继续（断点续跑）。"""
+        started = time.time()
         record = self._load_run(run_id)
         try:
             result = self._resume(record)
             self._finish_ok(record, result)
+            self._record_metrics("chat", "ok", started)
             return result
         except Exception as exc:
             self._finish_error(record, exc)
+            self._record_metrics("chat", "error", started)
             raise
 
     @abstractmethod
@@ -131,6 +137,11 @@ class BaseAgent(ABC):
             record.error = f"{type(exc).__name__}: {exc}"
             record.finished_at = time.time()
             self.store.update(record)
+
+    def _record_metrics(self, kind: str, status: str, started: float) -> None:
+        """把本次运行结果记入 Prometheus 指标（失败率告警的数据源）。"""
+        if self.settings.metrics_enabled:
+            record_run(kind, self.name, status, time.time() - started)
 
     def _load_run(self, run_id: str) -> RunRecord:
         if self.store is None:

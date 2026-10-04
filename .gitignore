@@ -8,6 +8,10 @@ env/
 
 .env
 
+# 运行时产物（SQLite 持久化 / 去重缓存 / 任务报告）
+data/
+reports/
+
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

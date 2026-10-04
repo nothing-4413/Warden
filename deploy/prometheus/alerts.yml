@@ -1,0 +1,16 @@
+groups:
+  - name: warden
+    rules:
+      - alert: WardenHighFailureRate
+        expr: |
+          (
+            sum(rate(warden_runs_total{status="error"}[5m]))
+            /
+            clamp_min(sum(rate(warden_runs_total[5m])), 0.0001)
+          ) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Warden 运行失败率过高（5 分钟窗口 > 20%）"
+          description: "{{ $value | humanizePercentage }} 的运行以 error 结束，请检查日志与 RunStore。"

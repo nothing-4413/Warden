@@ -12,7 +12,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from ..harness import RunRecord, new_trace_id, trace_span, with_retry
+from ..harness import RunRecord, new_trace_id, record_run, trace_span, with_retry
 from .base import BaseTask, Services, TaskResult
 from .registry import TaskRegistry
 
@@ -48,6 +48,7 @@ def build_scheduler(registry: TaskRegistry, ctx: Services) -> BackgroundSchedule
 
 def _run_task(task: BaseTask, ctx: Services) -> TaskResult:
     tid = new_trace_id()
+    started = time.time()
     with trace_span(tid):
         log.info("task start: %s", task.name)
         record = None
@@ -76,6 +77,8 @@ def _run_task(task: BaseTask, ctx: Services) -> TaskResult:
             ctx.store.update(record)
 
         _notify(task, ctx, result)
+        if ctx.settings.metrics_enabled:
+            record_run("task", task.name, result.status, time.time() - started)
         log.info("task done: %s -> %s", task.name, result.status)
         return result
 

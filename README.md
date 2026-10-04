@@ -6,13 +6,13 @@
 - 工具注册表 + 插件化扩展
 - 记忆（RAG over 个人笔记）· MCP · 调度器（后续里程碑）
 
-当前进度：**M1 已完成** —— M0 骨架（ReAct/PlanAct + 工具注册表）之上，加入 APScheduler 调度器 + 3 个定时任务（资讯简报 / 代码库维护 / 每周复盘）+ 通知器。
+当前进度：**M2 已完成** —— 在 M1（调度器 + 3 定时任务）之上，加入完整 Harness：状态持久化（SQLite RunStore）、断点续跑、重试/幂等、trace_id 全链路追踪、Prometheus + Grafana 监控大盘与失败率告警。
 
 ## 目录结构
 
 ```
 Warden/
-├── pyproject.toml          # 依赖（fastapi / uvicorn / httpx / pydantic）
+├── pyproject.toml          # 依赖（fastapi / uvicorn / httpx / pydantic / apscheduler / prometheus-client）
 ├── .env.example            # 环境变量示例（复制为 .env）
 ├── app/
 │   ├── config.py           # 配置：环境变量 + 极简 .env loader
@@ -34,6 +34,11 @@ Warden/
 │   │   ├── base.py         # Notifier 抽象
 │   │   ├── console.py      # 控制台通知
 │   │   └── file.py         # 写 reports/*.md
+│   ├── harness/
+│   │   ├── trace.py        # trace_id（contextvar + logging 注入）
+│   │   ├── run_store.py    # RunStore：SQLite 持久化每次运行
+│   │   ├── retry.py        # with_retry：指数退避重试
+│   │   └── metrics.py      # Prometheus 指标（runs_total + duration）
 │   ├── scheduler/
 │   │   ├── base.py         # BaseTask 抽象 + TaskResult + Services
 │   │   ├── registry.py     # 任务注册表
@@ -42,6 +47,11 @@ Warden/
 │       ├── news_digest.py  # 资讯/论文简报（RSS/Atom 解析 + 去重 + LLM 摘要）
 │       ├── repo_report.py  # 代码库维护（TODO 扫描 + 依赖版本 + 近期提交）
 │       └── weekly_review.py# 每周复盘（笔记 + 提交 → 周报）
+├── deploy/                 # M2 监控：Prometheus + Grafana（docker compose）
+│   ├── docker-compose.yml
+│   └── prometheus/
+│       ├── prometheus.yml  # 采集 /metrics
+│       └── alerts.yml      # 失败率告警规则
 └── tests/                  # 单元测试（含假 LLM 冒烟测试）
 ```
 
@@ -70,6 +80,7 @@ uvicorn app.main:app --reload
 # 对话：POST /api/v1/chat  body 见 app/schemas.py 的 ChatRequest
 # 任务列表：GET /api/v1/tasks
 # 手动触发：POST /api/v1/tasks/{name}/run
+# 监控指标：GET /metrics（Prometheus 文本格式，Grafana 数据源）
 
 # 5. 跑测试
 pytest -q
@@ -93,6 +104,21 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat \
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
 | vLLM / LM Studio | 各自 `/v1` 地址 | 对应模型名 |
 
+## 监控大盘（M2）
+
+```bash
+# 1. 启动应用（metrics 默认开启）
+uvicorn app.main:app
+
+# 2. 启动 Prometheus + Grafana（需 Docker）
+cd deploy
+docker compose up -d
+# Prometheus: http://localhost:9090（采集 /metrics + 评估失败率告警规则）
+# Grafana:    http://localhost:3000（admin/admin，添加 Prometheus 数据源即可建面板）
+```
+
+失败率告警规则见 `deploy/prometheus/alerts.yml`：5 分钟窗口内 `error` 占比 > 20% 触发。指标：`warden_runs_total{kind,name,status}` 计数 + `warden_run_duration_seconds` 耗时。
+
 ## 核心设计（M0）
 
 - **ReAct 循环**（`app/agent/react.py`）：Thought → Action → Observation 直到 Final Answer。输出契约为**单个 JSON 对象**二选一 —— `{"thought","action","action_input"}` 或 `{"thought","final_answer"}`。选 JSON 而非自由文本 `Action:` 解析，是因为本地小模型对 JSON 遵从度更高、解析更鲁棒（`extract_json` 容忍代码围栏与噪声）。
@@ -111,11 +137,19 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat \
   - `weekly_review`：近 7 天笔记（`*.md` 修改时间）+ 近期提交 → LLM 周报。
 - **调度器装配**（`app/scheduler/runner.py`）：`build_scheduler` 按注册表挂后台线程，本地时区（stdlib 取 tzinfo，不引 pytz/tzlocal），`coalesce=True, max_instances=1` 防止任务堆积/重入。
 
+## 核心设计（M2）
+
+- **RunStore（SQLite 持久化）**（`app/harness/run_store.py`）：每次 agent/task 运行一条 `RunRecord`，`id` 即 trace_id。零外部服务即可跑通（`PRAGMA journal_mode=WAL`），接口只暴露 start/update/get/list，换 PostgreSQL 只改这一处。
+- **断点续跑**（`app/agent/base.py`）：`BaseAgent.run()` 包 `_begin → _run → _finish_ok`，异常走 `_finish_error`；`resume(run_id)` 从已落库的 `steps`/`meta` 重建上下文，React 从中断步继续、PlanAct 跳过已执行步直接继续 Act/Summarize。
+- **重试/幂等**（`app/harness/retry.py` 的 `with_retry`）：指数退避（1s→2s→4s…），`retriable` 过滤不可重试异常；chat 端点的 `request_id` 已成功过则直接回放缓存答案（不重复调 LLM）。
+- **trace_id 全链路**（`app/harness/trace.py`）：`contextvars` 传 trace_id，子线程/子协程自动继承；`TraceFilter` 把它注入每条日志的 `[trace_id]` 段。
+- **监控指标**（`app/harness/metrics.py`）：`warden_runs_total`（按 kind/name/status）+ `warden_run_duration_seconds`，失败率 = error/(ok+error)。`metrics_enabled=false` 可关。
+
 ## 路线图
 
 - **M0 骨架** ✅ FastAPI + ReAct/PlanAct + 工具注册表 + 2 示例工具
 - **M1 动起来** ✅ APScheduler 调度器 + 3 个定时任务 + 通知器
-- **M2 Harness**（核心卖点）：状态持久化 + 断点续跑 + 重试/幂等 + trace_id + Prometheus/Grafana 监控
+- **M2 Harness** ✅ 状态持久化 + 断点续跑 + 重试/幂等 + trace_id + Prometheus/Grafana 监控
 - **M3 记忆**：RAG over 个人笔记（pgvector/Milvus）
 - **M4 多 Agent + MCP**：检索/摘要/生成多 Agent，MCP 接外部工具
 - **M5 打磨**：失败率告警、成本统计、可选前端

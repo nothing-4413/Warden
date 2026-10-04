@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  - job_name: warden
+    metrics_path: /metrics
+    static_configs:
+      # 应用跑在宿主机；Windows/macOS 的 Docker Desktop 原生支持 host.docker.internal。
+      # Linux 下请在 docker-compose 里给 prometheus 加 extra_hosts:
+      #   ["host.docker.internal:host-gateway"]
+      - targets: ["host.docker.internal:8000"]

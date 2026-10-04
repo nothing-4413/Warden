@@ -3,12 +3,12 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 
 from .agent.planact import PlanActAgent
 from .agent.react import ReactAgent
 from .config import get_settings
-from .harness import STATUS_OK, configure_logging, trace_span
+from .harness import STATUS_OK, configure_logging, metrics_text, trace_span
 from .harness.run_store import RunStore
 from .llm import LLMClient
 from .notify import get_notifier
@@ -52,6 +52,14 @@ def health() -> dict:
         "tools": registry.names(),
         "tasks": _task_registry.names(),
     }
+
+
+@app.get("/metrics")
+def metrics() -> Response:
+    """Prometheus 文本格式指标（Grafana 数据源 / 失败率告警的数据源）。"""
+    if not settings.metrics_enabled:
+        raise HTTPException(status_code=404, detail="metrics disabled")
+    return Response(content=metrics_text(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
