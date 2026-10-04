@@ -15,7 +15,7 @@ from .config import get_settings
 from .harness import STATUS_OK, configure_logging, metrics_text, trace_span
 from .harness.run_store import RunStore
 from .llm import LLMClient
-from .memory import Retriever, VectorStore
+from .memory import NotesIndexer, Retriever, VectorStore
 from .memory.embeddings import EmbeddingClient
 from .notify import get_notifier
 from .scheduler import Services, TaskNotFoundError, build_scheduler, run_once
@@ -30,8 +30,9 @@ llm = LLMClient(settings)
 embedder = EmbeddingClient(settings)
 memory_store = VectorStore(settings.memory_db_path)
 retriever = Retriever(embedder, memory_store)
+indexer = NotesIndexer(settings, embedder, memory_store)
 registry = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
-                                  min_score=settings.retrieval_min_score)
+                                  min_score=settings.retrieval_min_score, indexer=indexer)
 store = RunStore(settings.db_path)
 _agents = {
     "react": ReactAgent(settings, llm, registry, store=store),

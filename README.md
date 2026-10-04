@@ -181,6 +181,7 @@ docker compose up -d
 - **向量库**（`app/memory/vector_store.py`）：SQLite 存向量（JSON float 数组）+ 暴力余弦相似度检索。个人笔记量级（数千 chunk）零外部服务即可，接口 `add/search` 留作换 pgvector/Milvus 只改这一处（与 RunStore 同思路）。
 - **分块**（`app/memory/indexer.py` 的 `chunk_text`）：先按空行切段落，贪心合并到 `chunk_size`，单段超长硬切带 `overlap`；chunk id 用 `sha1(文件路径:序号)`，重跑索引幂等（INSERT OR REPLACE）。
 - **检索工具**（`app/tools/builtin/search_notes.py`）：`make_search_notes_tool(retriever, top_k, min_score)` 生成 `search_notes` 工具，Agent 当用户问"我的笔记/过去想法"时自动调用；`build_default_registry(retriever=None, ...)` 传 retriever 才注册（不传保持 M0 两个工具，零破坏）。
+- **记忆写回**（`app/tools/builtin/save_note.py`）：`make_save_note_tool(indexer)` 生成 `save_note` 工具，Agent 在会话中得出重要结论/决策时主动写入（走 `NotesIndexer.index_text`：分块 → 嵌入 → 入库，每条记忆独立 `doc_id=note/{topic}/{uuid}` 防冲突），之后（含下一次会话）可用 `search_notes` 检索到 —— 长期记忆读 + 写闭环。`build_default_registry(..., indexer=None)` 传 indexer 才注册。
 - **上下文工程**：① `retrieval_min_score` 阈值过滤低相似度片段，避免无关内容稀释上下文；② `BaseAgent._truncate_observation` 按 `max_observation_chars` 截断过长工具输出，防止撑爆上下文窗口；③ `search_notes` 返回 `[doc_id]` 并引导 Agent 在答案中引用出处；④ `BaseAgent._history_with_summary` 多轮上下文窗口——历史超过 `context_max_messages` 时把最旧消息压成一段摘要（滑动窗口 + 摘要压缩，摘要失败退化为纯窗口），防止多轮对话撑爆本地模型上下文。
 
 ## 核心设计（M4）

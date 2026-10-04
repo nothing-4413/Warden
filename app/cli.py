@@ -33,18 +33,20 @@ from .tools import ToolRegistry, build_default_registry
 
 
 def _build_memory(settings):
+    """建记忆组件：embedder / 向量库 / 检索器（读）/ 索引器（写）。"""
     embedder = EmbeddingClient(settings)
     store = VectorStore(settings.memory_db_path)
-    return embedder, store, Retriever(embedder, store)
+    indexer = NotesIndexer(settings, embedder, store)
+    return embedder, store, Retriever(embedder, store), indexer
 
 
 def _chat(query: str, agent_name: str) -> None:
     settings = get_settings()
     llm = LLMClient(settings)
     store = RunStore(settings.db_path)
-    _embedder, mem_store, retriever = _build_memory(settings)
+    _embedder, mem_store, retriever, indexer = _build_memory(settings)
     registry = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
-                                      min_score=settings.retrieval_min_score)
+                                      min_score=settings.retrieval_min_score, indexer=indexer)
     agent_cls = {"react": ReactAgent, "planact": PlanActAgent,
                  "function_call": FunctionCallAgent}[agent_name]
     agent = agent_cls(settings, llm, registry, store=store)
@@ -87,8 +89,7 @@ def _index_notes() -> int:
     if not settings.notes_dir:
         print("未设置 WARDEN_NOTES_DIR，无法索引笔记（在 .env 里配置后重试）。")
         return 1
-    embedder, store, _retriever = _build_memory(settings)
-    indexer = NotesIndexer(settings, embedder, store)
+    embedder, store, _retriever, indexer = _build_memory(settings)
     n = indexer.index_dir(settings.notes_dir)
     print(f"已索引 {n} 个 chunk 到 {settings.memory_db_path}")
     store.close()
@@ -97,7 +98,7 @@ def _index_notes() -> int:
 
 def _search_notes(query: str) -> None:
     settings = get_settings()
-    _embedder, store, retriever = _build_memory(settings)
+    _embedder, store, retriever, _indexer = _build_memory(settings)
     chunks = retriever.retrieve(query, k=settings.retrieval_top_k)
     if not chunks:
         print("没有在个人笔记里找到相关内容。")
@@ -126,11 +127,11 @@ def _team(query: str) -> int:
     settings = get_settings()
     llm = LLMClient(settings)
     store = RunStore(settings.db_path)
-    _embedder, mem_store, retriever = _build_memory(settings)
+    _embedder, mem_store, retriever, indexer = _build_memory(settings)
 
-    # researcher：带 search_notes（RAG 记忆）+ 所有 MCP 工具
+    # researcher：带 search_notes/save_note（RAG 记忆）+ 所有 MCP 工具
     researcher_tools = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
-                                              min_score=settings.retrieval_min_score)
+                                              min_score=settings.retrieval_min_score, indexer=indexer)
     mcp_clients: list = []
     if settings.mcp_servers:
         try:
@@ -163,10 +164,10 @@ def _research(query: str) -> int:
     settings = get_settings()
     llm = LLMClient(settings)
     store = RunStore(settings.db_path)
-    _embedder, mem_store, retriever = _build_memory(settings)
+    _embedder, mem_store, retriever, indexer = _build_memory(settings)
 
     researcher_tools = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
-                                              min_score=settings.retrieval_min_score)
+                                              min_score=settings.retrieval_min_score, indexer=indexer)
     mcp_clients: list = []
     if settings.mcp_servers:
         try:

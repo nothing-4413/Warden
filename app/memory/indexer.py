@@ -53,6 +53,22 @@ class NotesIndexer:
         self.embedder = embedder
         self.store = store
 
+    def index_text(self, text: str, doc_id: str) -> int:
+        """把单条文本分块、嵌入、写入向量库，返回写入 chunk 数。
+
+        doc_id 是来源标识：index_dir 用笔记文件路径，save_note 用 note/{topic}/{uuid}。
+        chunk id = sha1(f"{doc_id}:{i}")，同一 doc_id 重写幂等（INSERT OR REPLACE）。
+        """
+        chunks = chunk_text(text, self.settings.chunk_size, self.settings.chunk_overlap)
+        if not chunks:
+            return 0
+        # 一次嵌入整篇文本的所有 chunk（单次 HTTP 请求）
+        embeddings = self.embedder.embed(chunks)
+        for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
+            cid = hashlib.sha1(f"{doc_id}:{i}".encode("utf-8")).hexdigest()
+            self.store.add(cid, doc_id, chunk, emb)
+        return len(chunks)
+
     def index_dir(self, notes_dir: str) -> int:
         """索引目录下所有 *.md，返回新增 chunk 数。"""
         root = Path(notes_dir)
@@ -60,15 +76,5 @@ class NotesIndexer:
             return 0
         added = 0
         for md in sorted(root.rglob("*.md")):
-            text = md.read_text(encoding="utf-8")
-            chunks = chunk_text(text, self.settings.chunk_size, self.settings.chunk_overlap)
-            if not chunks:
-                continue
-            # 一次嵌入整篇笔记的所有 chunk（单次 HTTP 请求）
-            embeddings = self.embedder.embed(chunks)
-            for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
-                # chunk id 用文件路径+序号做稳定哈希：重跑索引是幂等的（INSERT OR REPLACE）
-                cid = hashlib.sha1(f"{md}:{i}".encode("utf-8")).hexdigest()
-                self.store.add(cid, str(md), chunk, emb)
-                added += 1
+            added += self.index_text(md.read_text(encoding="utf-8"), str(md))
         return added
