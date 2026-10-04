@@ -6,7 +6,7 @@
 - 工具注册表 + 插件化扩展
 - 记忆（RAG over 个人笔记）· MCP · 调度器（后续里程碑）
 
-当前进度：**M0 骨架已完成** —— FastAPI + 自研 ReAct/PlanAct + 工具注册表 + 2 个示例工具，对话式 Agent 跑通。
+当前进度：**M1 已完成** —— M0 骨架（ReAct/PlanAct + 工具注册表）之上，加入 APScheduler 调度器 + 3 个定时任务（资讯简报 / 代码库维护 / 每周复盘）+ 通知器。
 
 ## 目录结构
 
@@ -24,12 +24,24 @@ Warden/
 │   │   ├── base.py         # BaseAgent 抽象 + AgentStep/AgentRunResult + JSON 解析
 │   │   ├── react.py        # 自研 ReAct 循环
 │   │   └── planact.py      # 自研 PlanAct 循环（Plan → Act → Summarize）
-│   └── tools/
-│       ├── base.py         # Tool 定义（pydantic 输入模型）
-│       ├── registry.py     # 工具注册表
-│       └── builtin/
-│           ├── calculator.py      # 安全算术求值（ast 白名单，非 eval）
-│           └── datetime_tool.py   # 当前时间
+│   ├── tools/
+│   │   ├── base.py         # Tool 定义（pydantic 输入模型）
+│   │   ├── registry.py     # 工具注册表
+│   │   └── builtin/
+│   │       ├── calculator.py      # 安全算术求值（ast 白名单，非 eval）
+│   │       └── datetime_tool.py   # 当前时间
+│   ├── notify/
+│   │   ├── base.py         # Notifier 抽象
+│   │   ├── console.py      # 控制台通知
+│   │   └── file.py         # 写 reports/*.md
+│   ├── scheduler/
+│   │   ├── base.py         # BaseTask 抽象 + TaskResult + Services
+│   │   ├── registry.py     # 任务注册表
+│   │   └── runner.py       # APScheduler 装配 + run_once + 统一送达
+│   └── tasks/
+│       ├── news_digest.py  # 资讯/论文简报（RSS/Atom 解析 + 去重 + LLM 摘要）
+│       ├── repo_report.py  # 代码库维护（TODO 扫描 + 依赖版本 + 近期提交）
+│       └── weekly_review.py# 每周复盘（笔记 + 提交 → 周报）
 └── tests/                  # 单元测试（含假 LLM 冒烟测试）
 ```
 
@@ -45,13 +57,19 @@ pip install -e ".[dev]"
 copy .env.example .env          # 按需改 WARDEN_LLM_*
 
 # 3. 跑 CLI 冒烟
-python -m app.cli "12 * 7 + 3 等于多少？"
-python -m app.cli "现在几点了？" --agent planact
+python -m app.cli chat "12 * 7 + 3 等于多少？"
+python -m app.cli chat "现在几点了？" --agent planact
+
+# 3b. 定时任务
+python -m app.cli tasks              # 列出任务
+python -m app.cli run news_digest    # 手动触发一次（需 LLM 在线）
 
 # 4. 跑 API
 uvicorn app.main:app --reload
 # 健康检查：GET /health
 # 对话：POST /api/v1/chat  body 见 app/schemas.py 的 ChatRequest
+# 任务列表：GET /api/v1/tasks
+# 手动触发：POST /api/v1/tasks/{name}/run
 
 # 5. 跑测试
 pytest -q
@@ -83,10 +101,20 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat \
 - **安全 calculator**（`app/tools/builtin/calculator.py`）：不用 `eval`，改用 `ast` 解析 + 白名单节点，只允许四则/幂/取模/整除/括号。
 - **LLM 客户端**（`app/llm.py`）：不引入 `openai` SDK，`httpx` 直连 `/chat/completions`，`base_url` 指向哪就是哪。
 
+## 核心设计（M1）
+
+- **任务 = 一个类**（`app/scheduler/base.py` 的 `BaseTask`）：`run(ctx) -> TaskResult`，`schedule` 声明触发规则（APScheduler 的 cron/interval）。新增任务不改调度核心，与工具注册表同构。
+- **统一送达**（`app/scheduler/runner.py` 的 `_notify`）：任务只产出 `TaskResult`，由 runner 统一决定 ok→送报告 / error→送失败原因 / skipped→静默。任务本身不关心"发给谁"，换 `WARDEN_NOTIFY_KIND` 即切换 console/file。
+- **三个内置任务**：
+  - `news_digest`：stdlib `xml.etree` 解析 RSS 2.0/Atom（不引 feedparser）→ 链接去重（`data/news_seen.json` 跨次去重，只留最近 500 条）→ LLM 摘要。
+  - `repo_report`：`rglob` 扫 TODO/FIXME/HACK → `tomllib` 读依赖 + `importlib.metadata` 查版本 → `git log` 取近期提交 → LLM 报告。
+  - `weekly_review`：近 7 天笔记（`*.md` 修改时间）+ 近期提交 → LLM 周报。
+- **调度器装配**（`app/scheduler/runner.py`）：`build_scheduler` 按注册表挂后台线程，本地时区（stdlib 取 tzinfo，不引 pytz/tzlocal），`coalesce=True, max_instances=1` 防止任务堆积/重入。
+
 ## 路线图
 
 - **M0 骨架** ✅ FastAPI + ReAct/PlanAct + 工具注册表 + 2 示例工具
-- **M1 动起来**：调度器（APScheduler）+ 3 个定时任务
+- **M1 动起来** ✅ APScheduler 调度器 + 3 个定时任务 + 通知器
 - **M2 Harness**（核心卖点）：状态持久化 + 断点续跑 + 重试/幂等 + trace_id + Prometheus/Grafana 监控
 - **M3 记忆**：RAG over 个人笔记（pgvector/Milvus）
 - **M4 多 Agent + MCP**：检索/摘要/生成多 Agent，MCP 接外部工具

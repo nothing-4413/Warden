@@ -51,8 +51,17 @@ def _run_task(task: BaseTask, ctx: Services) -> TaskResult:
     except Exception as exc:  # 任务异常兜底，不让调度线程崩溃
         log.exception("task failed: %s", task.name)
         result = TaskResult(task=task.name, status="error", summary=str(exc), error=str(exc))
+    _notify(task, ctx, result)
     log.info("task done: %s -> %s", task.name, result.status)
     return result
+
+
+def _notify(task: BaseTask, ctx: Services, result: TaskResult) -> None:
+    """统一送达：ok 送报告正文，error 送失败原因，skipped 静默。"""
+    if result.status == "ok":
+        ctx.notifier.send(f"{task.name} 报告", result.summary)
+    elif result.status == "error":
+        ctx.notifier.send(f"{task.name} 失败", result.summary)
 
 
 def run_once(registry: TaskRegistry, ctx: Services, name: str) -> TaskResult:

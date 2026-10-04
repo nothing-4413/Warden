@@ -29,3 +29,17 @@ class ChatResponse(BaseModel):
     agent: str
     model: str
     steps: list[StepView]
+
+
+class TaskView(BaseModel):
+    name: str
+    description: str
+    schedule: dict[str, Any]
+
+
+class TaskRunResponse(BaseModel):
+    task: str
+    status: str
+    summary: str
+    detail: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
