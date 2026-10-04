@@ -9,11 +9,13 @@
   python -m app.cli mcp-ls                      # 列出 MCP server 工具
   python -m app.cli team "复杂任务"              # 多 Agent 编排（路由）
   python -m app.cli research "复杂问题"           # 多 Agent 接力（researcher → critic）
+  python -m app.cli collab "复杂问题"             # 多 Agent 共享黑板（researcher 写 → writer 读）
 """
 from __future__ import annotations
 
 import argparse
 
+from .agent.blackboard import Blackboard, BlackboardTeam
 from .agent.function_call import FunctionCallAgent
 from .agent.orchestrator import Orchestrator
 from .agent.pipeline import CriticPipeline
@@ -30,6 +32,7 @@ from .notify import get_notifier
 from .scheduler import Services, TaskNotFoundError, run_once
 from .tasks import build_default_task_registry
 from .tools import ToolRegistry, build_default_registry
+from .tools.builtin.blackboard import make_blackboard_read_tool, make_blackboard_write_tool
 
 
 def _build_memory(settings, llm=None):
@@ -205,6 +208,47 @@ def _research(query: str) -> int:
     return 0
 
 
+def _collab(query: str) -> int:
+    """多 Agent 共享黑板：researcher（检索 + 写黑板）→ writer（读黑板 + 成稿）。"""
+    settings = get_settings()
+    llm = LLMClient(settings)
+    store = RunStore(settings.db_path)
+    _embedder, mem_store, retriever, indexer = _build_memory(settings, llm=llm)
+
+    blackboard = Blackboard()
+    # researcher：检索工具 + 写黑板（把结论写入共享工作记忆）
+    researcher_tools = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
+                                              min_score=settings.retrieval_min_score, indexer=indexer,
+                                              rewrite=settings.rag_rewrite_enabled,
+                                              rerank=settings.rag_rerank_enabled)
+    researcher_tools.register(make_blackboard_write_tool(blackboard))
+    # writer：只读黑板（纯生成，不再检索）
+    writer_tools = ToolRegistry()
+    writer_tools.register(make_blackboard_read_tool(blackboard))
+
+    researcher = ReactAgent(settings, llm, researcher_tools, store=store,
+                            name="researcher", description="检索笔记/外部信息并写入共享黑板")
+    writer = ReactAgent(settings, llm, writer_tools, store=store,
+                        name="writer", description="读取黑板内容并合成最终答案")
+
+    team = BlackboardTeam(blackboard)
+    team.add(researcher, "Research the task using your tools. Write your key findings to "
+                         "the shared blackboard under the key 'findings' with blackboard_write, "
+                         "then give a brief answer.")
+    team.add(writer, "Read the shared blackboard with blackboard_read and write a polished, "
+                     "final answer based on its contents.")
+    try:
+        result = team.run(query)
+    finally:
+        store.close()
+        mem_store.close()
+    print(f"[{result.agent}] {result.answer}")
+    for s in result.steps:
+        label = s.action or "(answer)"
+        print(f"  step {s.index}: {s.thought or ''} -> {label} -> {s.observation}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     configure_logging()
     parser = argparse.ArgumentParser(prog="warden", description="Warden CLI")
@@ -229,6 +273,9 @@ def main(argv: list[str] | None = None) -> int:
     p_research = sub.add_parser("research", help="多 Agent 接力：researcher → critic")
     p_research.add_argument("query", help="user request")
 
+    p_collab = sub.add_parser("collab", help="多 Agent 共享黑板：researcher 写 → writer 读")
+    p_collab.add_argument("query", help="user request")
+
     p_search = sub.add_parser("search", help="语义检索个人笔记")
     p_search.add_argument("query", help="检索关键词/问题")
 
@@ -247,6 +294,8 @@ def main(argv: list[str] | None = None) -> int:
         return _team(args.query)
     elif args.command == "research":
         return _research(args.query)
+    elif args.command == "collab":
+        return _collab(args.query)
     elif args.command == "search":
         _search_notes(args.query)
     return 0

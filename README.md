@@ -28,14 +28,17 @@ Warden/
 │   │   ├── planact.py      # 自研 PlanAct 循环（Plan → Act → Summarize）
 │   │   ├── function_call.py # 自研原生 Function Calling 循环
 │   │   ├── orchestrator.py # M4 多 Agent：路由到专家
-│   │   └── pipeline.py     # Phase D 多 Agent 接力（researcher → critic）
+│   │   ├── pipeline.py     # Phase D 多 Agent 接力（researcher → critic）
+│   │   └── blackboard.py   # 多 Agent 共享工作记忆（黑板 Blackboard + BlackboardTeam）
 │   ├── tools/
 │   │   ├── base.py         # Tool 定义（pydantic 输入模型）
 │   │   ├── registry.py     # 工具注册表
 │   │   └── builtin/
 │   │       ├── calculator.py      # 安全算术求值（ast 白名单，非 eval）
 │   │       ├── datetime_tool.py   # 当前时间
-│   │       └── search_notes.py    # 语义检索个人笔记（RAG 记忆工具）
+│   │       ├── search_notes.py    # 语义检索个人笔记（RAG 记忆工具）
+│   │       ├── save_note.py       # 写回长期记忆（RAG 记忆的"写"侧）
+│   │       └── blackboard.py      # 黑板读写工具（多 Agent 共享工作记忆）
 │   ├── memory/                    # M3 记忆：RAG
 │   │   ├── embeddings.py  # OpenAI 兼容 /embeddings 客户端
 │   │   ├── vector_store.py# SQLite 向量库 + 余弦检索
@@ -101,6 +104,7 @@ python -m app.cli search "上个月学了什么"   # 语义检索
 python -m app.cli mcp-ls             # 列出 MCP server 暴露的工具
 python -m app.cli team "帮我总结最近的论文进展"   # 路由到专家（需 LLM 在线）
 python -m app.cli research "帮我查证 X 是否成立"   # 接力：researcher → critic（需 LLM 在线）
+python -m app.cli collab "帮我查证 X 是否成立"     # 共享黑板：researcher 写 → writer 读（需 LLM 在线）
 
 # 4. 跑 API
 uvicorn app.main:app --reload
@@ -191,7 +195,8 @@ docker compose up -d
 - **工具适配**（`app/mcp/tools.py`）：`build_input_model` 用 MCP 工具的 `inputSchema` 动态 `pydantic.create_model`（string/number/integer/boolean/array/object 启发式映射），`adapt_mcp_tool` 把它包成标准 `Tool` 挂进 `ToolRegistry` —— MCP 工具对 Agent 循环与内置工具完全同构。
 - **多 Agent 编排**（`app/agent/orchestrator.py` 的 `Orchestrator`）：一个路由 LLM 决定把请求交给哪个专家（返回 `{"specialist","task"}`），专家各自有独立工具注册表（researcher 带 search_notes/MCP、writer 纯生成）。`BaseAgent` 支持按实例定制 `name`/`description`，同一种 ReAct 循环复用作不同专家身份。
 - **多 Agent 接力**（`app/agent/pipeline.py` 的 `CriticPipeline`）：比路由更进一步——Researcher（带 search_notes/MCP 工具检索查证）先产出 findings，Critic（无工具、纯推理）再挑错补缺、给出改进版最终答案。前一个 Agent 的产出作为后一个的输入，两个 Agent 的 steps 合并回传，全程可追溯。
-- **CLI 演示**：`mcp-ls` 列出外部工具；`team` 拉起 researcher + writer 路由委派；`research` 拉起 researcher + critic 接力协作。
+- **多 Agent 共享工作记忆（黑板）**（`app/agent/blackboard.py`）：`Blackboard` 是线程安全的共享键值黑板，`BlackboardTeam` 顺序执行一组 `(agent, role)` 成员共享同一块黑板。相比 CriticPipeline 的"前一个产出直接塞进后一个 prompt"，黑板是**解耦的共享状态**——写方 Agent 用 `blackboard_write` 工具把中间结果写进黑板（无需知道谁会读），读方 Agent 用 `blackboard_read` 按 key 取出（无需依赖写方的返回结构），可扩展为更多 Agent（含异步）协作。`BlackboardTeam.run` 返回最后一个成员的答案、合并所有成员 steps（全程可追溯）。
+- **CLI 演示**：`mcp-ls` 列出外部工具；`team` 拉起 researcher + writer 路由委派；`research` 拉起 researcher + critic 接力协作；`collab` 拉起 researcher（检索 + 写黑板）→ writer（读黑板 + 成稿）共享工作记忆协作。
 
 ## 核心设计（M5）
 
