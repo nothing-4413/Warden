@@ -61,6 +61,10 @@ def _chat(query: str, agent_name: str) -> None:
 
     result = agent.run([{"role": "user", "content": query}])
     print(f"[{result.agent}|{result.model}] {result.answer}")
+    if result.self_eval:
+        conf = result.self_eval.get("confidence", "?")
+        reason = result.self_eval.get("reason", "")
+        print(f"  [self-eval] confidence={conf}  {reason}")
     for s in result.steps:
         label = s.action or "(answer)"
         print(f"  step {s.index}: {s.thought or ''} -> {label} -> {s.observation}")

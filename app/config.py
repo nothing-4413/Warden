@@ -47,6 +47,8 @@ class Settings:
     reflect_enabled: bool = os.getenv("WARDEN_REFLECT_ENABLED", "false").lower() in ("1", "true", "yes")
     # PlanAct 动态重规划：某步工具执行失败时重规划剩余步骤的上限次数（0 = 关闭重规划）
     max_replans: int = int(os.getenv("WARDEN_MAX_REPLANS", "2"))
+    # 置信度自评（self-eval）：给出最终答案后让模型评估自己答案的可信度（true 开启，多一次 LLM 调用）
+    self_eval_enabled: bool = os.getenv("WARDEN_SELF_EVAL_ENABLED", "false").lower() in ("1", "true", "yes")
 
     # API
     api_host: str = os.getenv("WARDEN_API_HOST", "127.0.0.1")

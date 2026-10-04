@@ -30,6 +30,7 @@ class ChatResponse(BaseModel):
     agent: str
     model: str
     steps: list[StepView]
+    self_eval: dict[str, Any] | None = None
 
 
 class TaskView(BaseModel):

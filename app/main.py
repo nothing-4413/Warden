@@ -127,6 +127,7 @@ def chat(req: ChatRequest) -> ChatResponse:
             steps=[StepView(index=s.index, thought=s.thought, action=s.action,
                             action_input=s.action_input, observation=s.observation)
                    for s in result.steps],
+            self_eval=result.self_eval,
         )
 
 

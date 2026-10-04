@@ -39,6 +39,7 @@ class AgentRunResult:
     steps: list[AgentStep] = field(default_factory=list)
     agent: str = ""
     model: str = ""
+    self_eval: dict[str, Any] | None = None
 
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
@@ -74,6 +75,14 @@ class BaseAgent(ABC):
     name: str = "base"
     description: str = ""
 
+    _SELF_EVAL_PROMPT = (
+        "You just produced the following answer. Judge how confident you are that it is "
+        "correct, and briefly say why.\n\n"
+        "Answer:\n<<ANSWER>>\n\n"
+        'Reply with a single JSON object: {"confidence": <float 0.0-1.0>, '
+        '"reason": "<one sentence>"}'
+    )
+
     def __init__(self, settings: Settings, llm: LLMClient, tools: ToolRegistry,
                  store: RunStore | None = None, name: str | None = None,
                  description: str | None = None) -> None:
@@ -96,6 +105,7 @@ class BaseAgent(ABC):
         record = self._begin("chat", history, trace_id)
         try:
             result = self._run(history, record)
+            self._maybe_self_eval(result)
             self._finish_ok(record, result)
             self._record_metrics("chat", "ok", started)
             return result
@@ -110,6 +120,7 @@ class BaseAgent(ABC):
         record = self._load_run(run_id)
         try:
             result = self._resume(record)
+            self._maybe_self_eval(result)
             self._finish_ok(record, result)
             self._record_metrics("chat", "ok", started)
             return result
@@ -223,3 +234,25 @@ class BaseAgent(ABC):
             return kept
         return [{"role": "user",
                  "content": f"[Earlier conversation summary]\n{summary}"}, *kept]
+
+    def _maybe_self_eval(self, result: AgentRunResult) -> None:
+        """置信度自评：开启后让模型评估自己答案的可信度，结果挂在 result.self_eval。
+
+        失败静默（评估不了就返回 None），绝不影响主流程；self_eval 已存在则不重复评估。
+        """
+        if not self.settings.self_eval_enabled or result.self_eval is not None:
+            return
+        result.self_eval = self._self_eval(result.answer)
+
+    def _self_eval(self, answer: str) -> dict[str, Any] | None:
+        """一次 LLM 调用评估答案置信度。解析失败/LLM 不可达返回 None。
+
+        用 replace 而非 .format()：prompt 里含有字面 JSON 花括号 {"confidence"...}，
+        .format() 会把它当占位符解析；答案本身也可能含 {}，同样不能走 format。
+        """
+        try:
+            content = self._SELF_EVAL_PROMPT.replace("<<ANSWER>>", answer)
+            raw = self.llm.chat([{"role": "user", "content": content}])
+            return extract_json(raw)
+        except Exception:
+            return None
