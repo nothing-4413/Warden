@@ -5,6 +5,10 @@
 
 自托管、长期运行的个人多智能体系统。
 
+![Warden 控制台](docs/console.png)
+
+控制台是零构建的静态页面：系统状态、定时任务（可手动触发）、最近运行，右上角直达 Prometheus `/metrics`。
+
 ## 为什么做这个
 
 - **数据不出网**：个人笔记、日程、代码库周报这类东西不想托管给第三方服务。Warden 默认指向本机 Ollama，除了你自己配置的 LLM/嵌入地址，不主动访问任何外部服务。
@@ -70,6 +74,7 @@ Warden/
 │   ├── notify/             # 通知（console / file）
 │   └── tasks/              # news_digest / repo_report / weekly_review
 ├── Dockerfile              # 应用镜像（可选）
+├── docs/console.png        # 控制台截图（README 用）
 ├── deploy/                 # docker compose：应用 + Prometheus + Grafana
 └── tests/                  # 单元测试（FakeLLM，零网络）
 ```
