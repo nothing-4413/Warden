@@ -1,10 +1,41 @@
-# M2 监控大盘：Prometheus（采集 /metrics + 失败率告警）+ Grafana（可视化）。
-# 用法：先启动 Warden 应用（uvicorn app.main:app），再 `docker compose up -d`。
-#   - Prometheus: http://localhost:9090
-#   - Grafana:    http://localhost:3000  （admin / admin，首次登录会要求改密）
+# Warden 全栈：应用 + Prometheus（采集 /metrics + 失败率告警）+ Grafana（可视化）。
+# 一把起：cd deploy && docker compose up -d --build
+#   - Warden 控制台 http://localhost:8000
+#   - Prometheus    http://localhost:9090
+#   - Grafana       http://localhost:3000 （admin / admin，首次登录会要求改密）
+#
+# 只想起监控、应用在宿主机用 uvicorn 跑：docker compose up -d prometheus grafana
+# （同时把 prometheus/prometheus.yml 的 targets 改成 host.docker.internal:8000）
 services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: warden:local
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    # 读取仓库根目录的 .env；没有该文件时按 config.py 的默认值运行
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      # 容器里的 localhost 是容器自身：连宿主机的 Ollama 必须走 host.docker.internal。
+      # 用远程 LLM / 网关时，在 shell 或 deploy/.env 里设 WARDEN_LLM_BASE_URL 覆盖这里。
+      WARDEN_LLM_BASE_URL: ${WARDEN_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      WARDEN_API_HOST: 0.0.0.0
+    # Docker Desktop（Windows/macOS）自带 host.docker.internal；Linux 需要这一行
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - warden-data:/app/data
+      - warden-reports:/app/reports
+      # 想让容器索引本机笔记时，挂进来并把 WARDEN_NOTES_DIR 指向容器内路径：
+      # - C:/notes:/notes:ro
+
   prometheus:
     image: prom/prometheus:latest
+    restart: unless-stopped
     ports:
       - "9090:9090"
     volumes:
@@ -13,7 +44,12 @@ services:
 
   grafana:
     image: grafana/grafana:latest
+    restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+
+volumes:
+  warden-data:
+  warden-reports:

@@ -68,7 +68,8 @@ Warden/
 │   ├── scheduler/          # BaseTask + APScheduler 装配
 │   ├── notify/             # 通知（console / file）
 │   └── tasks/              # news_digest / repo_report / weekly_review
-├── deploy/                 # Prometheus + Grafana（docker compose）
+├── Dockerfile              # 应用镜像（可选）
+├── deploy/                 # docker compose：应用 + Prometheus + Grafana
 └── tests/                  # 单元测试（FakeLLM，零网络）
 ```
 
@@ -111,6 +112,18 @@ pytest -q
 python -m scripts.smoke
 ```
 
+### Docker（可选）
+
+一条命令起全栈（应用 + 监控）。镜像基于 `python:3.14-slim`，以非 root 用户运行，容器内跑 `uvicorn`：
+
+```bash
+cd deploy
+docker compose up -d --build
+# 控制台 http://localhost:8000 ；Prometheus http://localhost:9090 ；Grafana http://localhost:3000（admin / admin）
+```
+
+容器里的 `localhost` 指容器自身，因此 compose 把 `WARDEN_LLM_BASE_URL` 默认设为 `http://host.docker.internal:11434/v1`（连宿主机的 Ollama）；用远程 LLM 时在 shell 或 `deploy/.env` 里设同名变量即可覆盖。运行时数据落在 `warden-data` / `warden-reports` 两个命名卷里。
+
 对话请求示例：
 
 ```bash
@@ -140,7 +153,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat \
 - **工具层**：新增工具 = 写一个 `Tool` + `register`，核心循环零改动。输入用 pydantic 校验并生成 JSON Schema；可选 `output_model` 输出校验、`timeout_s` 执行超时。
 - **记忆**：笔记分块 → 嵌入 → SQLite 向量库暴力余弦检索。`search_notes` 读、`save_note` 写回，长期记忆闭环；可选查询改写 + LLM 重排两级检索增强。
 - **多 Agent + MCP**：`Orchestrator` 路由到专家、`CriticPipeline` 接力（researcher → critic）、`BlackboardTeam` 共享黑板；MCP 客户端零依赖 stdio JSON-RPC，工具动态适配进注册表。
-- **监控**：`deploy/` 下 `docker compose up -d` 起 Prometheus(:9090) + Grafana(:3000)，失败率告警（5 分钟窗口 error > 20%）。
+- **部署与监控**：`deploy/` 下 `docker compose up -d --build` 一把起应用(:8000) + Prometheus(:9090) + Grafana(:3000)，失败率告警（5 分钟窗口 error > 20%）。只想跑监控、应用在宿主机用 uvicorn 时：`docker compose up -d prometheus grafana`，并把 `deploy/prometheus/prometheus.yml` 的 target 改成 `host.docker.internal:8000`。
 
 ## 开发
 

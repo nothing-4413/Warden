@@ -37,3 +37,10 @@ jobs:
           cache-dependency-path: pyproject.toml
       - run: pip install -e ".[dev]"
       - run: pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # 只验证镜像能构建（不推送）：Dockerfile 跑不起来时，这里是唯一的自动化拦截
+      - run: docker build -t warden:ci .
