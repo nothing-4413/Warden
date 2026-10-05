@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..config import Settings
+from ..gateway import derive_session_id, gateway_session_scope
 from ..harness import RunRecord, RunStore, STATUS_ERROR, STATUS_OK, new_trace_id, record_run
 from ..llm import LLMClient
 from ..tools import ToolNotFoundError, ToolRegistry
@@ -98,6 +99,13 @@ class BaseAgent(ABC):
 
     # ---- 对外入口：持久化 + 状态收尾 ----
     def run(self, history: list[dict], trace_id: str | None = None) -> AgentRunResult:
+        # M6：整轮运行（含下面 _history_with_summary 里的摘要压缩调用）都归属同一个
+        # 网关会话。会话 id 由**裁剪前**的完整历史派生，所以上下文窗口怎么滑动，
+        # InferGate 账本里都还是同一个会话。
+        with gateway_session_scope(derive_session_id(history)):
+            return self._turn(history, trace_id)
+
+    def _turn(self, history: list[dict], trace_id: str | None) -> AgentRunResult:
         started = time.time()
         # 多轮上下文窗口：超出上限先把最旧消息压成摘要；压缩结果随 record.input 持久化，
         # resume 重建上下文时复用同一份，保证续跑与首跑看到一致的上下文。
@@ -116,8 +124,14 @@ class BaseAgent(ABC):
 
     def resume(self, run_id: str) -> AgentRunResult:
         """从已持久化的断点继续（断点续跑）。"""
-        started = time.time()
         record = self._load_run(run_id)
+        # M6：续跑用落库的原始历史派生会话 id，与首跑落在同一个会话里
+        history = record.input if isinstance(record.input, list) else []
+        with gateway_session_scope(derive_session_id(history)):
+            return self._resume_turn(record)
+
+    def _resume_turn(self, record: RunRecord) -> AgentRunResult:
+        started = time.time()
         try:
             result = self._resume(record)
             self._maybe_self_eval(result)

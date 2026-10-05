@@ -90,6 +90,23 @@ class Settings:
     llm_input_price_per_mtok: float = float(os.getenv("WARDEN_LLM_INPUT_PRICE_PER_1M", "0"))
     llm_output_price_per_mtok: float = float(os.getenv("WARDEN_LLM_OUTPUT_PRICE_PER_1M", "0"))
 
+    # 网关集成 InferGate（M6）：会话/租户归属 + 幂等重放 + 能力发现
+    # 是否发送 X-InferGate-Session / X-InferGate-Tenant / Idempotency-Key。
+    # 未知请求头会被普通 OpenAI 端点忽略，所以默认开启是安全的；关掉即退化为普通请求。
+    gateway_enabled: bool = os.getenv("WARDEN_GATEWAY_ENABLED", "true").lower() in ("1", "true", "yes")
+    # 租户：InferGate 按租户隔离会话账本与幂等缓存；缺省 anonymous（匿名）
+    gateway_tenant: str = os.getenv("WARDEN_GATEWAY_TENANT", "warden")
+    # 显式钉死会话 id（留空 = 由本轮完整历史的首条用户消息确定性派生，跨轮稳定、跨进程可复现）
+    gateway_session: str = os.getenv("WARDEN_GATEWAY_SESSION", "")
+    # 409 infergate_idempotency_in_flight（同键的原始请求仍在飞行）的重试次数上限
+    gateway_retry_attempts: int = int(os.getenv("WARDEN_GATEWAY_RETRY_ATTEMPTS", "3"))
+    # 上面那种重试的等待秒数：优先用响应里的 Retry-After，缺失时用这个缺省值
+    gateway_retry_after_s: float = float(os.getenv("WARDEN_GATEWAY_RETRY_AFTER_S", "1"))
+    # 能力发现（GET {base_url}/capabilities）：开关与 TTL 秒数；探不到就返回 None，不影响对话
+    gateway_capabilities_enabled: bool = os.getenv(
+        "WARDEN_GATEWAY_CAPABILITIES_ENABLED", "true").lower() in ("1", "true", "yes")
+    gateway_capabilities_ttl_s: float = float(os.getenv("WARDEN_GATEWAY_CAPABILITIES_TTL_S", "60"))
+
     @property
     def rss_source_list(self) -> list[str]:
         return [s.strip() for s in self.rss_sources.split(",") if s.strip()]

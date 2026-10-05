@@ -27,6 +27,16 @@ COST_TOTAL = Counter(
     "LLM 成本（USD，累计），按 model 区分。",
     ["model"],
 )
+GATEWAY_REPLAY_TOTAL = Counter(
+    "warden_gateway_idempotent_replays_total",
+    "InferGate 幂等回放次数（命中网关已存答案，未重复上游调用也未重复计费）。",
+    ["model"],
+)
+GATEWAY_IN_FLIGHT_RETRY_TOTAL = Counter(
+    "warden_gateway_in_flight_retries_total",
+    "因 409 infergate_idempotency_in_flight（同键原始请求仍在飞行）而等待重试的次数。",
+    ["model"],
+)
 
 
 def record_run(kind: str, name: str, status: str, duration_s: float) -> None:
@@ -40,6 +50,16 @@ def record_llm_usage(model: str, prompt_tokens: int, completion_tokens: int, cos
     TOKENS_TOTAL.labels(model=model, direction="prompt").inc(prompt_tokens)
     TOKENS_TOTAL.labels(model=model, direction="completion").inc(completion_tokens)
     COST_TOTAL.labels(model=model).inc(cost)
+
+
+def record_idempotent_replay(model: str) -> None:
+    """记录一次 InferGate 幂等回放（M6）：这轮没有真的打到上游。"""
+    GATEWAY_REPLAY_TOTAL.labels(model=model).inc()
+
+
+def record_in_flight_retry(model: str) -> None:
+    """记录一次 409 in_flight 等待重试（M6）：同键的原始请求还在跑。"""
+    GATEWAY_IN_FLIGHT_RETRY_TOTAL.labels(model=model).inc()
 
 
 def metrics_text() -> str:
