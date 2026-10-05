@@ -1,5 +1,8 @@
 # Warden
 
+[![CI](https://github.com/nothing-4413/Warden/actions/workflows/ci.yml/badge.svg)](https://github.com/nothing-4413/Warden/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 自托管、长期运行的个人多智能体系统。
 
 ## 特性
