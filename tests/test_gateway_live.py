@@ -12,7 +12,6 @@ mock 上游的 /calls 计数不变、响应带 X-InferGate-Idempotent-Replay: tr
 
 import os
 import uuid
-from dataclasses import replace
 
 import httpx
 import pytest
@@ -44,13 +43,14 @@ def _no_proxy_for_loopback(monkeypatch):
 
 
 def _client() -> LLMClient:
-    settings = replace(
-        get_settings(),
-        llm_base_url=f"{GATEWAY}/v1",
-        llm_api_key="mock-key",
-        llm_model=MODEL,
-        gateway_tenant=TENANT,
-        gateway_session="",
+    settings = get_settings().model_copy(
+        update={
+            "llm_base_url": f"{GATEWAY}/v1",
+            "llm_api_key": "mock-key",
+            "llm_model": MODEL,
+            "gateway_tenant": TENANT,
+            "gateway_session": "",
+        }
     )
     return LLMClient(settings)
 

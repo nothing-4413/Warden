@@ -10,7 +10,7 @@ from app.llm import LLMClient
 
 
 def test_compute_cost():
-    s = Settings(llm_input_price_per_mtok=2.0, llm_output_price_per_mtok=6.0)
+    s = Settings(llm_input_price_per_1m=2.0, llm_output_price_per_1m=6.0)
     assert compute_cost(s, 1_000_000, 1_000_000) == 8.0
     assert compute_cost(Settings(), 1000, 1000) == 0.0  # 默认单价 0
 

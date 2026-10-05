@@ -44,7 +44,7 @@ Warden/
 ├── pyproject.toml
 ├── .env.example            # 环境变量示例（复制为 .env）
 ├── app/
-│   ├── config.py           # 配置（环境变量 + 极简 .env loader）
+│   ├── config.py           # 配置（pydantic-settings：环境变量 / .env，带类型校验）
 │   ├── llm.py              # OpenAI 兼容 LLM 客户端（httpx 直连）
 │   ├── schemas.py          # API 请求/响应模型
 │   ├── main.py             # FastAPI 应用 + 路由
