@@ -1,11 +1,12 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "warden"
 version = "0.1.0"
 description = "Warden — 自托管个人 Agent 工作台"
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "apscheduler>=3.10,<4",
