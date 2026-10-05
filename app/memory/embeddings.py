@@ -2,6 +2,7 @@
 
 注意：嵌入用独立模型（如 nomic-embed-text / bge-m3），与对话模型 qwen2.5 分开。
 """
+
 from __future__ import annotations
 
 import httpx

@@ -3,12 +3,12 @@
 零第三方依赖：直接 subprocess 拉起 MCP server，按行收发 JSON-RPC。
 规范参考：https://modelcontextprotocol.io/specification/2024-11-05/
 """
+
 from __future__ import annotations
 
 import json
 import subprocess
 from dataclasses import dataclass
-from typing import Any
 
 
 @dataclass
@@ -37,11 +37,14 @@ class MCPClient:
         self.initialize()
 
     def initialize(self) -> None:
-        self._request("initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "warden", "version": "0.4.0"},
-        })
+        self._request(
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "warden", "version": "0.4.0"},
+            },
+        )
         # 初始化完成通知（notification：无 id，不期待响应）
         self._notify("notifications/initialized", {})
 
@@ -69,8 +72,11 @@ class MCPClient:
     def list_tools(self) -> list[MCPTool]:
         result = self._request("tools/list", {})
         return [
-            MCPTool(name=t["name"], description=t.get("description", ""),
-                    input_schema=t.get("inputSchema", {}))
+            MCPTool(
+                name=t["name"],
+                description=t.get("description", ""),
+                input_schema=t.get("inputSchema", {}),
+            )
             for t in result.get("tools", [])
         ]
 

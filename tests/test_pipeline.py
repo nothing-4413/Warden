@@ -1,4 +1,5 @@
 """CriticPipeline：多 Agent 接力（researcher → critic），用假 LLM 验证接力顺序。"""
+
 from app.agent.pipeline import CriticPipeline
 from app.agent.react import ReactAgent
 from app.config import Settings
@@ -17,12 +18,26 @@ class FakeLLM:
 
 def test_critic_pipeline_researcher_then_critic():
     settings = Settings()
-    researcher = ReactAgent(settings, FakeLLM([
-        '{"thought": "search", "final_answer": "findings: the answer is 42"}',
-    ]), build_default_registry(), name="researcher")
-    critic = ReactAgent(settings, FakeLLM([
-        '{"thought": "review", "final_answer": "improved: 42, but with caveats"}',
-    ]), ToolRegistry(), name="critic")
+    researcher = ReactAgent(
+        settings,
+        FakeLLM(
+            [
+                '{"thought": "search", "final_answer": "findings: the answer is 42"}',
+            ]
+        ),
+        build_default_registry(),
+        name="researcher",
+    )
+    critic = ReactAgent(
+        settings,
+        FakeLLM(
+            [
+                '{"thought": "review", "final_answer": "improved: 42, but with caveats"}',
+            ]
+        ),
+        ToolRegistry(),
+        name="critic",
+    )
 
     pipeline = CriticPipeline(researcher, critic)
     result = pipeline.run("what is the answer?")
@@ -42,12 +57,26 @@ def test_critic_pipeline_critic_sees_findings():
             return super().chat(messages, temperature)
 
     settings = Settings()
-    researcher = ReactAgent(settings, FakeLLM([
-        '{"final_answer": "the sky is blue"}',
-    ]), build_default_registry(), name="researcher")
-    critic = ReactAgent(settings, SpyLLM([
-        '{"final_answer": "ok"}',
-    ]), ToolRegistry(), name="critic")
+    researcher = ReactAgent(
+        settings,
+        FakeLLM(
+            [
+                '{"final_answer": "the sky is blue"}',
+            ]
+        ),
+        build_default_registry(),
+        name="researcher",
+    )
+    critic = ReactAgent(
+        settings,
+        SpyLLM(
+            [
+                '{"final_answer": "ok"}',
+            ]
+        ),
+        ToolRegistry(),
+        name="critic",
+    )
 
     CriticPipeline(researcher, critic).run("what color is the sky?")
 

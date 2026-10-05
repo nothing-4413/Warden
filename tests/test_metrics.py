@@ -1,7 +1,8 @@
 """Prometheus 指标：record_run 计数 + /metrics 文本输出。"""
+
 from prometheus_client import REGISTRY
 
-from app.harness.metrics import record_run, metrics_text
+from app.harness.metrics import metrics_text, record_run
 
 _LABELS = {"kind": "chat", "name": "metric_probe", "status": "ok"}
 

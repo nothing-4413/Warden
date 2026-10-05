@@ -1,4 +1,5 @@
 """M5：可选前端（简单控制台页面 + 运行记录端点）。"""
+
 from fastapi.testclient import TestClient
 
 from app.main import app

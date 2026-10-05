@@ -1,10 +1,10 @@
 """M2 Part1：RunStore（SQLite 持久化）+ trace_id 追踪。"""
+
 from app.harness import (
-    RunRecord,
-    RunStore,
-    STATUS_ERROR,
     STATUS_OK,
     STATUS_RUNNING,
+    RunRecord,
+    RunStore,
     get_trace_id,
     new_trace_id,
     trace_span,

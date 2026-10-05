@@ -1,4 +1,5 @@
 """通知器层：报告送达方式。"""
+
 from __future__ import annotations
 
 from ..config import Settings
@@ -6,7 +7,7 @@ from .base import Notifier
 from .console import ConsoleNotifier
 from .file import FileNotifier
 
-__all__ = ["Notifier", "ConsoleNotifier", "FileNotifier", "get_notifier"]
+__all__ = ["ConsoleNotifier", "FileNotifier", "Notifier", "get_notifier"]
 
 
 def get_notifier(settings: Settings) -> Notifier:

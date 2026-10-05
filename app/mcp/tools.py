@@ -1,7 +1,6 @@
 """把 MCP 工具适配成 Warden 的 Tool（挂进 ToolRegistry，Agent 即可调用）。"""
-from __future__ import annotations
 
-from typing import Optional
+from __future__ import annotations
 
 from pydantic import Field, create_model
 
@@ -32,12 +31,16 @@ def build_input_model(name: str, input_schema: dict):
         if key in required:
             fields[key] = (t, Field(description=spec.get("description", "")))
         else:
-            fields[key] = (Optional[t], Field(default=None, description=spec.get("description", "")))
+            fields[key] = (
+                t | None,
+                Field(default=None, description=spec.get("description", "")),
+            )
     return create_model(f"MCP_{name}", **fields)
 
 
-def adapt_mcp_tool(client: MCPClient, mcp_name: str, mcp_description: str,
-                   input_schema: dict, prefix: str = "") -> Tool:
+def adapt_mcp_tool(
+    client: MCPClient, mcp_name: str, mcp_description: str, input_schema: dict, prefix: str = ""
+) -> Tool:
     """把一个 MCP 工具包装成 Warden Tool；调用时透传给 client.call_tool。"""
     model = build_input_model(mcp_name, input_schema)
 

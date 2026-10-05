@@ -6,6 +6,7 @@ LLM 客户端（app/llm.py）是唯一使用者 —— 不新增第二条 HTTP �
 网关不认识这些头时（裸 OpenAI / 旧版 InferGate / Ollama）一切都照旧：
 未知请求头会被忽略，能力探测失败返回 None，调用方退化为原有行为。
 """
+
 from .capabilities import CapabilityCache, ModelCapability, get_capability_cache
 from .identity import (
     HEADER_IDEMPOTENCY_KEY,

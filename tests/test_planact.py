@@ -1,4 +1,5 @@
 """用假 LLM 验证 PlanAct 循环逻辑。"""
+
 from app.agent.planact import PlanActAgent
 from app.config import Settings
 from app.tools import build_default_registry
@@ -15,10 +16,12 @@ class FakeLLM:
 
 
 def test_planact_plans_and_summarizes():
-    llm = FakeLLM([
-        '{"plan": [{"step": "compute", "tool": "calculator", "args": {"expression": "3 * 4"}}]}',
-        "the result is 12",
-    ])
+    llm = FakeLLM(
+        [
+            '{"plan": [{"step": "compute", "tool": "calculator", "args": {"expression": "3 * 4"}}]}',
+            "the result is 12",
+        ]
+    )
     agent = PlanActAgent(Settings(), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "3*4?"}])
 
@@ -43,11 +46,13 @@ class SpyLLM:
 
 def test_planact_replans_after_tool_failure():
     """某步工具失败时，PlanAct 重规划剩余步骤并继续执行。"""
-    llm = FakeLLM([
-        '{"plan": [{"step": "try bad", "tool": "nope", "args": {}}]}',
-        '{"plan": [{"step": "compute", "tool": "calculator", "args": {"expression": "2+2"}}]}',
-        "the result is 4",
-    ])
+    llm = FakeLLM(
+        [
+            '{"plan": [{"step": "try bad", "tool": "nope", "args": {}}]}',
+            '{"plan": [{"step": "compute", "tool": "calculator", "args": {"expression": "2+2"}}]}',
+            "the result is 4",
+        ]
+    )
     agent = PlanActAgent(Settings(), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "compute 2+2"}])
 
@@ -61,11 +66,13 @@ def test_planact_replans_after_tool_failure():
 
 def test_planact_replanning_is_bounded():
     """重规划有上限（max_replans），失败步骤不会导致无限重规划。"""
-    llm = SpyLLM([
-        '{"plan": [{"step": "bad1", "tool": "nope", "args": {}}]}',
-        '{"plan": [{"step": "bad2", "tool": "nope", "args": {}}]}',
-        "done",
-    ])
+    llm = SpyLLM(
+        [
+            '{"plan": [{"step": "bad1", "tool": "nope", "args": {}}]}',
+            '{"plan": [{"step": "bad2", "tool": "nope", "args": {}}]}',
+            "done",
+        ]
+    )
     agent = PlanActAgent(Settings(max_replans=1), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "do it"}])
 

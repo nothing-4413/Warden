@@ -1,4 +1,5 @@
 """trace_id 全链路追踪：contextvar + logging 注入。"""
+
 from __future__ import annotations
 
 import contextlib

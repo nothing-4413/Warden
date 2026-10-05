@@ -1,4 +1,6 @@
 """用假 LLM / 假网络验证三个定时任务的核心逻辑（不发真实网络请求）。"""
+
+import app.tasks.news_digest as news_digest
 from app.config import Settings
 from app.notify.base import Notifier
 from app.scheduler.base import Services
@@ -6,7 +8,6 @@ from app.tasks import build_default_task_registry
 from app.tasks.news_digest import NewsDigestTask, parse_feed
 from app.tasks.repo_report import RepoReportTask
 from app.tasks.weekly_review import WeeklyReviewTask
-import app.tasks.news_digest as news_digest
 
 
 class FakeLLM:

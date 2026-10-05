@@ -1,4 +1,5 @@
 """FastAPI 入口：健康检查 + 对话端点 + 调度任务端点（含 trace_id + 幂等回放）。"""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -31,10 +32,14 @@ embedder = EmbeddingClient(settings)
 memory_store = VectorStore(settings.memory_db_path)
 retriever = Retriever(embedder, memory_store, llm=llm)
 indexer = NotesIndexer(settings, embedder, memory_store)
-registry = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
-                                  min_score=settings.retrieval_min_score, indexer=indexer,
-                                  rewrite=settings.rag_rewrite_enabled,
-                                  rerank=settings.rag_rerank_enabled)
+registry = build_default_registry(
+    retriever=retriever,
+    top_k=settings.retrieval_top_k,
+    min_score=settings.retrieval_min_score,
+    indexer=indexer,
+    rewrite=settings.rag_rewrite_enabled,
+    rerank=settings.rag_rerank_enabled,
+)
 store = RunStore(settings.db_path)
 _agents = {
     "react": ReactAgent(settings, llm, registry, store=store),
@@ -124,9 +129,16 @@ def chat(req: ChatRequest) -> ChatResponse:
             answer=result.answer,
             agent=result.agent,
             model=result.model,
-            steps=[StepView(index=s.index, thought=s.thought, action=s.action,
-                            action_input=s.action_input, observation=s.observation)
-                   for s in result.steps],
+            steps=[
+                StepView(
+                    index=s.index,
+                    thought=s.thought,
+                    action=s.action,
+                    action_input=s.action_input,
+                    observation=s.observation,
+                )
+                for s in result.steps
+            ],
             self_eval=result.self_eval,
         )
 
@@ -144,8 +156,11 @@ def run_task(name: str) -> TaskRunResponse:
     try:
         result = run_once(_task_registry, _task_ctx, name)
     except TaskNotFoundError:
-        raise HTTPException(status_code=404, detail=f"unknown task: {name}")
+        raise HTTPException(status_code=404, detail=f"unknown task: {name}") from None
     return TaskRunResponse(
-        task=result.task, status=result.status, summary=result.summary,
-        detail=result.detail, error=result.error,
+        task=result.task,
+        status=result.status,
+        summary=result.summary,
+        detail=result.detail,
+        error=result.error,
     )

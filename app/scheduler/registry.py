@@ -1,4 +1,5 @@
 """任务注册表：按名字注册/查找任务（与工具注册表同构，插件化）。"""
+
 from __future__ import annotations
 
 from .base import BaseTask

@@ -1,4 +1,5 @@
 """LLM 成本统计（M5）：token 用量 × 模型单价 → 美元成本。"""
+
 from __future__ import annotations
 
 from ..config import Settings

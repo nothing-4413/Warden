@@ -1,7 +1,8 @@
 """示例工具：返回当前本地时间，演示无参数工具。"""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pydantic import BaseModel
 
@@ -13,7 +14,7 @@ class NowInput(BaseModel):
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    return datetime.now(UTC).astimezone().isoformat(timespec="seconds")
 
 
 datetime_tool = Tool(

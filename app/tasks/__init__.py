@@ -1,4 +1,5 @@
 """内置定时任务 + 默认注册表构建。"""
+
 from __future__ import annotations
 
 from ..config import Settings

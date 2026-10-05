@@ -1,4 +1,5 @@
 """Agent 基类、运行结果数据结构、共享的 JSON 解析工具。"""
+
 from __future__ import annotations
 
 import json
@@ -10,7 +11,7 @@ from typing import Any
 
 from ..config import Settings
 from ..gateway import derive_session_id, gateway_session_scope
-from ..harness import RunRecord, RunStore, STATUS_ERROR, STATUS_OK, new_trace_id, record_run
+from ..harness import STATUS_ERROR, STATUS_OK, RunRecord, RunStore, new_trace_id, record_run
 from ..llm import LLMClient
 from ..tools import ToolNotFoundError, ToolRegistry
 
@@ -18,6 +19,7 @@ from ..tools import ToolNotFoundError, ToolRegistry
 @dataclass
 class AgentStep:
     """循环里的一步：模型思考 + （可选）工具调用 + 观测结果。"""
+
     index: int
     thought: str | None = None
     action: str | None = None
@@ -84,9 +86,15 @@ class BaseAgent(ABC):
         '"reason": "<one sentence>"}'
     )
 
-    def __init__(self, settings: Settings, llm: LLMClient, tools: ToolRegistry,
-                 store: RunStore | None = None, name: str | None = None,
-                 description: str | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        llm: LLMClient,
+        tools: ToolRegistry,
+        store: RunStore | None = None,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> None:
         self.settings = settings
         self.llm = llm
         self.tools = tools
@@ -144,12 +152,10 @@ class BaseAgent(ABC):
             raise
 
     @abstractmethod
-    def _run(self, history: list[dict], record: RunRecord | None) -> AgentRunResult:
-        ...
+    def _run(self, history: list[dict], record: RunRecord | None) -> AgentRunResult: ...
 
     @abstractmethod
-    def _resume(self, record: RunRecord) -> AgentRunResult:
-        ...
+    def _resume(self, record: RunRecord) -> AgentRunResult: ...
 
     # ---- 持久化辅助 ----
     def _begin(self, kind: str, payload: Any, trace_id: str | None) -> RunRecord | None:
@@ -188,8 +194,9 @@ class BaseAgent(ABC):
             raise ValueError(f"run {run_id} is not a {self.name} chat run")
         return record
 
-    def _persist_step(self, record: RunRecord | None, step: AgentStep,
-                      raw: str | None = None) -> None:
+    def _persist_step(
+        self, record: RunRecord | None, step: AgentStep, raw: str | None = None
+    ) -> None:
         """把一步追加进 RunRecord.steps 并落库。raw 是模型原始输出（resume 重建上下文用）。"""
         if record is not None:
             d = step.to_dict()
@@ -204,7 +211,8 @@ class BaseAgent(ABC):
             tool = self.tools.get(action)
         except ToolNotFoundError:
             return self._truncate_observation(
-                f"error: unknown tool '{action}'. Available: {self.tools.names()}")
+                f"error: unknown tool '{action}'. Available: {self.tools.names()}"
+            )
         try:
             result = tool.run(action_input)
         except Exception as exc:  # 工具内部报错回传给模型
@@ -237,17 +245,20 @@ class BaseAgent(ABC):
         overflow = history[:-limit]
         kept = history[-limit:]
         try:
-            summary = self.llm.chat([
-                {"role": "system",
-                 "content": "Summarize the conversation below in 2-3 sentences, "
-                            "preserving the user's goals, key facts, and decisions."},
-                *overflow,
-            ]).strip()
+            summary = self.llm.chat(
+                [
+                    {
+                        "role": "system",
+                        "content": "Summarize the conversation below in 2-3 sentences, "
+                        "preserving the user's goals, key facts, and decisions.",
+                    },
+                    *overflow,
+                ]
+            ).strip()
         except Exception:
             # 摘要失败（LLM 不可达/超时）就退回纯窗口，宁可丢信息也不阻塞对话
             return kept
-        return [{"role": "user",
-                 "content": f"[Earlier conversation summary]\n{summary}"}, *kept]
+        return [{"role": "user", "content": f"[Earlier conversation summary]\n{summary}"}, *kept]
 
     def _maybe_self_eval(self, result: AgentRunResult) -> None:
         """置信度自评：开启后让模型评估自己答案的可信度，结果挂在 result.self_eval。

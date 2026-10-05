@@ -1,4 +1,5 @@
 """M4 Part2：多 Agent 编排器（路由 + 专家委派）。"""
+
 from app.agent.orchestrator import Orchestrator
 from app.agent.react import ReactAgent
 from app.config import Settings
@@ -25,8 +26,9 @@ def _settings():
 
 def _specialist(name, description, answer):
     llm = FakeLLM([f'{{"thought": "ok", "final_answer": "{answer}"}}'])
-    agent = ReactAgent(_settings(), llm, build_default_registry(),
-                       name=name, description=description)
+    agent = ReactAgent(
+        _settings(), llm, build_default_registry(), name=name, description=description
+    )
     return agent, llm
 
 

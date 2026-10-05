@@ -4,6 +4,7 @@
 infergate 仓库的 tmp/warden_m6_e2e.py，以及 tests/test_gateway_live.py
 （未设 WARDEN_E2E_GATEWAY 时自动 skip）。
 """
+
 from __future__ import annotations
 
 import httpx
@@ -24,8 +25,10 @@ from app.gateway import (
 from app.gateway.capabilities import capabilities_url
 from app.llm import LLMClient, LLMError
 
-CHAT_OK = {"choices": [{"message": {"content": "ok"}}],
-           "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+CHAT_OK = {
+    "choices": [{"message": {"content": "ok"}}],
+    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+}
 
 
 class FakeResp:
@@ -72,14 +75,18 @@ def in_flight_body():
 
 # ---- A. 三个请求头 ----
 
+
 def test_three_headers_sent_with_stable_values(monkeypatch):
     rec = Recorder([FakeResp()])
     monkeypatch.setattr(httpx, "post", rec)
     client = LLMClient(Settings(gateway_tenant="team-a"))
     turn1 = [{"role": "user", "content": "第一轮：帮我看下日志"}]
     client.chat(turn1)
-    turn2 = [*turn1, {"role": "assistant", "content": "ok"},
-             {"role": "user", "content": "第二轮：再看下磁盘"}]
+    turn2 = [
+        *turn1,
+        {"role": "assistant", "content": "ok"},
+        {"role": "user", "content": "第二轮：再看下磁盘"},
+    ]
     client.chat(turn2)
 
     h1, h2 = rec.headers
@@ -135,25 +142,30 @@ def test_gateway_headers_can_be_disabled(monkeypatch):
 def test_scope_keeps_session_stable_when_history_is_trimmed(monkeypatch):
     """窗口裁剪（甚至开头被换成摘要）后，会话 id 仍由完整历史决定。"""
     full = [{"role": "user", "content": "会话开头"}] + [
-        {"role": "assistant", "content": str(i)} for i in range(40)]
+        {"role": "assistant", "content": str(i)} for i in range(40)
+    ]
     rec = Recorder([FakeResp()])
     monkeypatch.setattr(httpx, "post", rec)
     client = LLMClient(Settings())
     with gateway_session_scope(derive_session_id(full)):
-        client.chat([{"role": "user", "content": "[Earlier conversation summary]\n..."},
-                     {"role": "user", "content": "继续"}])
+        client.chat(
+            [
+                {"role": "user", "content": "[Earlier conversation summary]\n..."},
+                {"role": "user", "content": "继续"},
+            ]
+        )
     assert rec.headers[0][HEADER_SESSION] == derive_session_id(full)
 
 
 def test_pinned_session_wins_over_derivation(monkeypatch):
     rec = Recorder([FakeResp()])
     monkeypatch.setattr(httpx, "post", rec)
-    LLMClient(Settings(gateway_session="pinned-session")).chat(
-        [{"role": "user", "content": "q"}])
+    LLMClient(Settings(gateway_session="pinned-session")).chat([{"role": "user", "content": "q"}])
     assert rec.headers[0][HEADER_SESSION] == "pinned-session"
 
 
 # ---- A2. 409 in_flight 可重试 / 409 conflict 快速失败 ----
+
 
 def test_in_flight_retried_once_then_succeeds(monkeypatch):
     rec = Recorder([FakeResp(409, in_flight_body(), {"Retry-After": "1"}), FakeResp()])
@@ -166,7 +178,7 @@ def test_in_flight_retried_once_then_succeeds(monkeypatch):
     assert len(rec.calls) == 2
     # 重试用的是同一个幂等键 —— 这正是网关能回放而不是重新干活的前提
     assert rec.headers[0][HEADER_IDEMPOTENCY_KEY] == rec.headers[1][HEADER_IDEMPOTENCY_KEY]
-    assert sleeps == [1.0]                       # 尊重响应里的 Retry-After
+    assert sleeps == [1.0]  # 尊重响应里的 Retry-After
     assert client.last_gateway.attempts == 2
 
 
@@ -191,15 +203,20 @@ def test_in_flight_gives_up_after_max_attempts(monkeypatch):
 
 
 def test_conflict_fails_fast(monkeypatch):
-    rec = Recorder([FakeResp(409, {"error": {"message": "conflict",
-                                             "type": "infergate_idempotency_conflict"}}),
-                    FakeResp()])
+    rec = Recorder(
+        [
+            FakeResp(
+                409, {"error": {"message": "conflict", "type": "infergate_idempotency_conflict"}}
+            ),
+            FakeResp(),
+        ]
+    )
     sleeps: list[float] = []
     monkeypatch.setattr(httpx, "post", rec)
     monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
     with pytest.raises(LLMError):
         LLMClient(Settings()).chat([{"role": "user", "content": "q"}])
-    assert len(rec.calls) == 1     # 键派生错了，重试再多次也是同一个错
+    assert len(rec.calls) == 1  # 键派生错了，重试再多次也是同一个错
     assert sleeps == []
 
 
@@ -223,17 +240,28 @@ def test_garbage_conflict_body_does_not_crash(monkeypatch):
 
 # ---- A3. 幂等回放 = 正常成功 ----
 
+
 def test_replay_is_a_normal_success(monkeypatch):
-    rec = Recorder([FakeResp(200, CHAT_OK, {
-        HEADER_REPLAY: "true",
-        "X-InferGate-Idempotent-Origin": "req-original-1",
-        "X-InferGate-Idempotent-Age": "1234",
-        "X-InferGate-Idempotent-Upstream": "scripted-mock",
-        "X-InferGate-Upstream-Name": "replay",
-    })])
+    rec = Recorder(
+        [
+            FakeResp(
+                200,
+                CHAT_OK,
+                {
+                    HEADER_REPLAY: "true",
+                    "X-InferGate-Idempotent-Origin": "req-original-1",
+                    "X-InferGate-Idempotent-Age": "1234",
+                    "X-InferGate-Idempotent-Upstream": "scripted-mock",
+                    "X-InferGate-Upstream-Name": "replay",
+                },
+            )
+        ]
+    )
     monkeypatch.setattr(httpx, "post", rec)
-    before = REGISTRY.get_sample_value(
-        "warden_gateway_idempotent_replays_total", {"model": "gw-replay"}) or 0.0
+    before = (
+        REGISTRY.get_sample_value("warden_gateway_idempotent_replays_total", {"model": "gw-replay"})
+        or 0.0
+    )
 
     client = LLMClient(Settings(llm_model="gw-replay"))
     assert client.chat([{"role": "user", "content": "q"}]) == "ok"
@@ -244,16 +272,22 @@ def test_replay_is_a_normal_success(monkeypatch):
     assert gw.replay_age_ms == 1234
     assert gw.replay_upstream == "scripted-mock"
     assert gw.upstream_name == "replay"
-    assert client.last_usage.prompt_tokens == 1     # 回放照样带 usage，照常记账
+    assert client.last_usage.prompt_tokens == 1  # 回放照样带 usage，照常记账
     after = REGISTRY.get_sample_value(
-        "warden_gateway_idempotent_replays_total", {"model": "gw-replay"})
+        "warden_gateway_idempotent_replays_total", {"model": "gw-replay"}
+    )
     assert after == before + 1
 
 
 def test_non_replay_response_is_recorded_as_false(monkeypatch):
     """真正干活时 InferGate 也会带 Replay: false。"""
-    rec = Recorder([FakeResp(200, CHAT_OK, {HEADER_REPLAY: "false",
-                                            "X-InferGate-Upstream-Name": "scripted-mock"})])
+    rec = Recorder(
+        [
+            FakeResp(
+                200, CHAT_OK, {HEADER_REPLAY: "false", "X-InferGate-Upstream-Name": "scripted-mock"}
+            )
+        ]
+    )
     monkeypatch.setattr(httpx, "post", rec)
     client = LLMClient(Settings())
     client.chat([{"role": "user", "content": "q"}])
@@ -262,6 +296,7 @@ def test_non_replay_response_is_recorded_as_false(monkeypatch):
 
 
 # ---- A4. 容忍没有任何 InferGate 头的端点 ----
+
 
 def test_bare_gateway_without_any_infergate_headers(monkeypatch):
     class BareResp:
@@ -284,8 +319,13 @@ CAPS = {
     "generated_at": "2024-01-01T00:00:00Z",
     "capabilities": ["chat", "tools"],
     "models": [
-        {"model": "mock-gpt", "capabilities": ["chat", "tools"],
-         "context_window": 128000, "max_output_tokens": 4096, "available": True},
+        {
+            "model": "mock-gpt",
+            "capabilities": ["chat", "tools"],
+            "context_window": 128000,
+            "max_output_tokens": 4096,
+            "available": True,
+        },
         # omitempty：值为 0 的字段在真实响应里直接不出现
         {"model": "tiny", "capabilities": ["chat"], "available": True},
     ],
@@ -294,26 +334,25 @@ CAPS = {
 
 
 def test_capabilities_url():
-    assert capabilities_url("http://127.0.0.1:18939/v1") == \
-        "http://127.0.0.1:18939/v1/capabilities"
-    assert capabilities_url("http://127.0.0.1:18939/") == \
-        "http://127.0.0.1:18939/v1/capabilities"
-    assert capabilities_url("http://gw.openai.com/v1/") == \
-        "http://gw.openai.com/v1/capabilities"
+    assert capabilities_url("http://127.0.0.1:18939/v1") == "http://127.0.0.1:18939/v1/capabilities"
+    assert capabilities_url("http://127.0.0.1:18939/") == "http://127.0.0.1:18939/v1/capabilities"
+    assert capabilities_url("http://gw.openai.com/v1/") == "http://gw.openai.com/v1/capabilities"
 
 
 def test_capability_lookup_parses_context_window(monkeypatch):
     rec = Recorder([FakeResp(200, CAPS)])
     monkeypatch.setattr(httpx, "get", rec)
-    client = LLMClient(Settings(llm_base_url="http://gw:1/v1", llm_model="mock-gpt"),
-                       capabilities=CapabilityCache(ttl_s=60))
+    client = LLMClient(
+        Settings(llm_base_url="http://gw:1/v1", llm_model="mock-gpt"),
+        capabilities=CapabilityCache(ttl_s=60),
+    )
 
     assert client.context_window() == 128000
     assert client.max_output_tokens() == 4096
     assert client.capability().capabilities == ("chat", "tools")
-    assert client.context_window("tiny") is None    # 字段缺省 = 未知，不是 0
+    assert client.context_window("tiny") is None  # 字段缺省 = 未知，不是 0
     assert client.context_window("nope") is None
-    assert rec.urls == ["http://gw:1/v1/capabilities"]   # TTL 内只探测一次
+    assert rec.urls == ["http://gw:1/v1/capabilities"]  # TTL 内只探测一次
 
 
 def test_capabilities_500_degrades(monkeypatch):
@@ -333,8 +372,9 @@ def test_capabilities_network_error_degrades(monkeypatch):
 
 
 def test_capabilities_non_json_degrades(monkeypatch):
-    monkeypatch.setattr(httpx, "get",
-                        Recorder([FakeResp(200, ValueError("not json"), text="<html>")]))
+    monkeypatch.setattr(
+        httpx, "get", Recorder([FakeResp(200, ValueError("not json"), text="<html>")])
+    )
     client = LLMClient(Settings(), capabilities=CapabilityCache(ttl_s=60))
     assert client.context_window() is None
 
@@ -352,7 +392,7 @@ def test_capabilities_failure_is_cached(monkeypatch):
 def test_capabilities_refetch_after_ttl(monkeypatch):
     rec = Recorder([FakeResp(200, CAPS)])
     monkeypatch.setattr(httpx, "get", rec)
-    cache = CapabilityCache(ttl_s=0)      # 0 = 不缓存
+    cache = CapabilityCache(ttl_s=0)  # 0 = 不缓存
     assert cache.context_window("http://gw:1/v1", "mock-gpt") == 128000
     assert cache.context_window("http://gw:1/v1", "mock-gpt") == 128000
     assert len(rec.calls) == 2
@@ -361,7 +401,8 @@ def test_capabilities_refetch_after_ttl(monkeypatch):
 def test_capabilities_can_be_disabled(monkeypatch):
     rec = Recorder([FakeResp(200, CAPS)])
     monkeypatch.setattr(httpx, "get", rec)
-    client = LLMClient(Settings(gateway_capabilities_enabled=False),
-                       capabilities=CapabilityCache(ttl_s=60))
+    client = LLMClient(
+        Settings(gateway_capabilities_enabled=False), capabilities=CapabilityCache(ttl_s=60)
+    )
     assert client.context_window() is None
     assert rec.calls == []

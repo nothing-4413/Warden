@@ -1,4 +1,5 @@
 """把配置里的 MCP server 全部拉起、适配成 Warden 工具注册表。"""
+
 from __future__ import annotations
 
 from ..tools import ToolRegistry

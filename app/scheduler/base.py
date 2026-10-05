@@ -1,4 +1,5 @@
 """任务基类与运行结果。"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -23,6 +24,7 @@ class TaskResult:
 @dataclass
 class Services:
     """任务运行所需的共享服务。store 为 None 时任务运行不落库。"""
+
     settings: Settings
     llm: LLMClient
     notifier: Notifier
@@ -41,5 +43,4 @@ class BaseTask(ABC):
     schedule: dict = {"trigger": "interval", "minutes": 60}
 
     @abstractmethod
-    def run(self, ctx: Services) -> TaskResult:
-        ...
+    def run(self, ctx: Services) -> TaskResult: ...

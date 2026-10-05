@@ -1,4 +1,5 @@
 """用假 LLM 验证 ReAct 循环逻辑（不发真实网络请求）。"""
+
 from app.agent.react import ReactAgent
 from app.config import Settings
 from app.tools import build_default_registry
@@ -15,10 +16,12 @@ class FakeLLM:
 
 
 def test_react_calls_tool_then_answers():
-    llm = FakeLLM([
-        '{"thought": "need to compute", "action": "calculator", "action_input": {"expression": "2 + 2"}}',
-        '{"thought": "got 4", "final_answer": "the result is 4"}',
-    ])
+    llm = FakeLLM(
+        [
+            '{"thought": "need to compute", "action": "calculator", "action_input": {"expression": "2 + 2"}}',
+            '{"thought": "got 4", "final_answer": "the result is 4"}',
+        ]
+    )
     agent = ReactAgent(Settings(), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "2+2?"}])
 
@@ -29,10 +32,12 @@ def test_react_calls_tool_then_answers():
 
 
 def test_react_unknown_tool_is_reported_back():
-    llm = FakeLLM([
-        '{"thought": "try", "action": "nonexistent", "action_input": {}}',
-        '{"thought": "fallback", "final_answer": "cannot do it"}',
-    ])
+    llm = FakeLLM(
+        [
+            '{"thought": "try", "action": "nonexistent", "action_input": {}}',
+            '{"thought": "fallback", "final_answer": "cannot do it"}',
+        ]
+    )
     agent = ReactAgent(Settings(), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "hi"}])
 
@@ -51,8 +56,14 @@ def test_observation_is_truncated():
         pass
 
     registry = ToolRegistry()
-    registry.register(Tool(name="long", description="returns a long string",
-                           input_model=NoInput, func=lambda: "x" * 5000))
+    registry.register(
+        Tool(
+            name="long",
+            description="returns a long string",
+            input_model=NoInput,
+            func=lambda: "x" * 5000,
+        )
+    )
     settings = Settings(max_observation_chars=50)
     agent = ReactAgent(settings, LLMClient(settings), registry)
     obs = agent._execute("long", {})
@@ -64,10 +75,12 @@ def test_observation_is_truncated():
 
 def test_react_self_corrects_invalid_json():
     """第一轮输出非法 JSON 时，Agent 自纠重试一次并恢复。"""
-    llm = FakeLLM([
-        "sorry, I cannot produce JSON",
-        '{"thought": "ok", "final_answer": "recovered"}',
-    ])
+    llm = FakeLLM(
+        [
+            "sorry, I cannot produce JSON",
+            '{"thought": "ok", "final_answer": "recovered"}',
+        ]
+    )
     agent = ReactAgent(Settings(), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "hi"}])
     assert result.answer == "recovered"
@@ -85,11 +98,13 @@ def test_react_invalid_json_twice_returns_raw():
 
 def test_react_max_steps_forces_final_answer():
     """达到最大步数时强制收尾：让模型基于观测给出最终回答，而非只报诊断。"""
-    llm = FakeLLM([
-        '{"thought": "a", "action": "calculator", "action_input": {"expression": "1 + 1"}}',
-        '{"thought": "b", "action": "calculator", "action_input": {"expression": "2 + 2"}}',
-        "the final answer is 6",
-    ])
+    llm = FakeLLM(
+        [
+            '{"thought": "a", "action": "calculator", "action_input": {"expression": "1 + 1"}}',
+            '{"thought": "b", "action": "calculator", "action_input": {"expression": "2 + 2"}}',
+            "the final answer is 6",
+        ]
+    )
     agent = ReactAgent(Settings(agent_max_steps=2), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "compute"}])
     assert result.answer == "the final answer is 6"

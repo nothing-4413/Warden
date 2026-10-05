@@ -1,4 +1,5 @@
 """M3 记忆：分块 + 向量库增查 + 检索器 + search_notes 工具。"""
+
 from app.memory.indexer import chunk_text
 from app.memory.retriever import Retriever
 from app.memory.vector_store import VectorStore
@@ -69,8 +70,12 @@ def test_search_notes_tool_registered(tmp_path):
     store = VectorStore(str(tmp_path / "mem.db"))
     embedder = FakeEmbedder()
     retriever = Retriever(embedder, store)
-    store.add("a", "n.md", "warden is a personal agent framework",
-              embedder.embed(["warden agent framework"])[0])
+    store.add(
+        "a",
+        "n.md",
+        "warden is a personal agent framework",
+        embedder.embed(["warden agent framework"])[0],
+    )
     registry = build_default_registry(retriever=retriever, top_k=2)
     assert "search_notes" in registry.names()
     result = registry.get("search_notes").run({"query": "warden"})

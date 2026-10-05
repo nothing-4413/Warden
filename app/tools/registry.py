@@ -2,6 +2,7 @@
 
 插件化关键：新增工具 = 写一个 Tool 并 register，核心循环零改动。
 """
+
 from __future__ import annotations
 
 import json

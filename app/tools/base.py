@@ -9,11 +9,13 @@
 
 timeout_s 可选：大于 0 时给工具执行加墙钟超时，超时返回错误串，避免单个工具卡死整个循环。
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Callable, Type
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -22,9 +24,9 @@ from pydantic import BaseModel
 class Tool:
     name: str
     description: str
-    input_model: Type[BaseModel]
+    input_model: type[BaseModel]
     func: Callable[..., Any]
-    output_model: Type[BaseModel] | None = None
+    output_model: type[BaseModel] | None = None
     timeout_s: float | None = None
 
     def json_schema(self) -> dict[str, Any]:

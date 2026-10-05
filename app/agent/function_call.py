@@ -5,15 +5,12 @@
 （含 tool_call_id 与结构化 arguments），执行后以 `role:"tool"` 回填上下文。
 两条路线并存，展示"prompt 级"与"协议级"两种工具调用方式。
 """
+
 from __future__ import annotations
 
 import json
-from typing import Any
 
-from ..config import Settings
 from ..harness import RunRecord, with_retry
-from ..llm import LLMClient
-from ..tools import ToolRegistry
 from .base import AgentRunResult, AgentStep, BaseAgent
 
 _SYSTEM_TEMPLATE = """\
@@ -82,13 +79,25 @@ class FunctionCallAgent(BaseAgent):
 
     def _resume(self, record: RunRecord) -> AgentRunResult:
         messages = (record.meta or {}).get("messages") or self._messages(record.input or [])
-        steps = [AgentStep(index=d["index"], thought=d.get("thought"), action=d.get("action"),
-                           action_input=d.get("action_input"), observation=d.get("observation"))
-                 for d in record.steps]
+        steps = [
+            AgentStep(
+                index=d["index"],
+                thought=d.get("thought"),
+                action=d.get("action"),
+                action_input=d.get("action_input"),
+                observation=d.get("observation"),
+            )
+            for d in record.steps
+        ]
         return self._loop(messages, steps, record, len(steps))
 
-    def _loop(self, messages: list[dict], steps: list[AgentStep],
-              record: RunRecord | None, start_index: int) -> AgentRunResult:
+    def _loop(
+        self,
+        messages: list[dict],
+        steps: list[AgentStep],
+        record: RunRecord | None,
+        start_index: int,
+    ) -> AgentRunResult:
         for index in range(start_index, self.settings.agent_max_steps):
             content, calls = self._chat_with_tools(messages)
 
@@ -98,37 +107,55 @@ class FunctionCallAgent(BaseAgent):
                 s = AgentStep(index=index, thought=answer, observation=answer)
                 steps.append(s)
                 self._persist_step(record, s, None)
-                return AgentRunResult(answer=answer, steps=steps,
-                                      agent=self.name, model=self.llm.model)
+                return AgentRunResult(
+                    answer=answer, steps=steps, agent=self.name, model=self.llm.model
+                )
 
             # 有工具调用：回填 assistant 的 tool_calls 消息，再逐条执行、以 role:"tool" 回填
-            messages.append({
-                "role": "assistant",
-                "content": content or None,
-                "tool_calls": [
-                    {"id": c.id, "type": "function",
-                     "function": {"name": c.name,
-                                  "arguments": json.dumps(c.arguments, ensure_ascii=False)}}
-                    for c in calls
-                ],
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": content or None,
+                    "tool_calls": [
+                        {
+                            "id": c.id,
+                            "type": "function",
+                            "function": {
+                                "name": c.name,
+                                "arguments": json.dumps(c.arguments, ensure_ascii=False),
+                            },
+                        }
+                        for c in calls
+                    ],
+                }
+            )
             for c in calls:
                 observation = self._execute(c.name, c.arguments)
-                obs_text = (observation if isinstance(observation, str)
-                            else json.dumps(observation, ensure_ascii=False, default=str))
+                obs_text = (
+                    observation
+                    if isinstance(observation, str)
+                    else json.dumps(observation, ensure_ascii=False, default=str)
+                )
                 messages.append({"role": "tool", "tool_call_id": c.id, "content": obs_text})
-                s = AgentStep(index=index, thought=None, action=c.name,
-                              action_input=c.arguments, observation=observation)
+                s = AgentStep(
+                    index=index,
+                    thought=None,
+                    action=c.name,
+                    action_input=c.arguments,
+                    observation=observation,
+                )
                 steps.append(s)
                 self._persist_step(record, s, None)
 
         # 达到最大步数：强制收尾
         try:
             final = self._chat(
-                messages + [{"role": "user", "content": _FORCE_FINAL_PROMPT}]).strip()
+                messages + [{"role": "user", "content": _FORCE_FINAL_PROMPT}]
+            ).strip()
         except Exception:
             last = steps[-1].observation if steps else "(none)"
-            final = (f"reached max steps ({self.settings.agent_max_steps}) without a "
-                     f"final answer; last observation: {last}")
-        return AgentRunResult(answer=final, steps=steps,
-                              agent=self.name, model=self.llm.model)
+            final = (
+                f"reached max steps ({self.settings.agent_max_steps}) without a "
+                f"final answer; last observation: {last}"
+            )
+        return AgentRunResult(answer=final, steps=steps, agent=self.name, model=self.llm.model)

@@ -8,16 +8,11 @@
 - 本地小模型（Ollama/Qwen）对 JSON 指令的遵从度高于自由格式
 - 解析鲁棒（去代码围栏后 json.loads），无需脆弱的正则
 """
+
 from __future__ import annotations
 
-from typing import Any
-
-from ..config import Settings
 from ..harness import RunRecord, with_retry
-from ..llm import LLMClient
-from ..tools import ToolRegistry
 from .base import AgentRunResult, AgentStep, BaseAgent, extract_json
-
 
 _SYSTEM_TEMPLATE = """\
 You are Warden, an autonomous agent. Solve the user's request step by step.
@@ -112,12 +107,18 @@ class ReactAgent(BaseAgent):
         """
         observations = "\n".join(
             f"- {s.action or '(think)'}: {s.observation}"
-            for s in steps if s.observation is not None)
-        parsed, _raw = self._chat_json([
-            {"role": "system", "content": _REFLECT_PROMPT},
-            {"role": "user",
-             "content": f"Draft answer:\n{draft}\n\nObservations so far:\n{observations}"},
-        ])
+            for s in steps
+            if s.observation is not None
+        )
+        parsed, _raw = self._chat_json(
+            [
+                {"role": "system", "content": _REFLECT_PROMPT},
+                {
+                    "role": "user",
+                    "content": f"Draft answer:\n{draft}\n\nObservations so far:\n{observations}",
+                },
+            ]
+        )
         if parsed is None:
             return "ok", ""
         verdict = str(parsed.get("verdict", "ok")).lower()
@@ -132,8 +133,13 @@ class ReactAgent(BaseAgent):
         messages = self._messages(record.input or [])
         steps: list[AgentStep] = []
         for d in record.steps:
-            s = AgentStep(index=d["index"], thought=d.get("thought"), action=d.get("action"),
-                          action_input=d.get("action_input"), observation=d.get("observation"))
+            s = AgentStep(
+                index=d["index"],
+                thought=d.get("thought"),
+                action=d.get("action"),
+                action_input=d.get("action_input"),
+                observation=d.get("observation"),
+            )
             steps.append(s)
             if d.get("raw"):
                 messages.append({"role": "assistant", "content": d["raw"]})
@@ -141,8 +147,13 @@ class ReactAgent(BaseAgent):
                 messages.append({"role": "user", "content": f"Observation: {d.get('observation')}"})
         return self._loop(messages, steps, record, len(steps))
 
-    def _loop(self, messages: list[dict], steps: list[AgentStep],
-              record: RunRecord | None, start_index: int) -> AgentRunResult:
+    def _loop(
+        self,
+        messages: list[dict],
+        steps: list[AgentStep],
+        record: RunRecord | None,
+        start_index: int,
+    ) -> AgentRunResult:
         for index in range(start_index, self.settings.agent_max_steps):
             parsed, raw = self._chat_json(messages)
 
@@ -152,8 +163,9 @@ class ReactAgent(BaseAgent):
                 s = AgentStep(index=index, thought=None, observation=answer)
                 steps.append(s)
                 self._persist_step(record, s, raw)
-                return AgentRunResult(answer=answer, steps=steps,
-                                      agent=self.name, model=self.llm.model)
+                return AgentRunResult(
+                    answer=answer, steps=steps, agent=self.name, model=self.llm.model
+                )
 
             if "final_answer" in parsed:
                 answer = str(parsed["final_answer"])
@@ -165,15 +177,22 @@ class ReactAgent(BaseAgent):
                 if self.settings.reflect_enabled:
                     verdict, feedback = self._reflect(answer, steps)
                     if verdict == "redo":
-                        steps.append(AgentStep(index=index, thought="reflection",
-                                               action="_reflect", observation=feedback))
+                        steps.append(
+                            AgentStep(
+                                index=index,
+                                thought="reflection",
+                                action="_reflect",
+                                observation=feedback,
+                            )
+                        )
                         self._persist_step(record, steps[-1], None)
                         messages.append({"role": "assistant", "content": raw.strip()})
                         messages.append({"role": "user", "content": f"Reflection: {feedback}"})
                         continue  # 下一轮让模型基于反馈改进答案或补查工具
 
-                return AgentRunResult(answer=answer, steps=steps,
-                                      agent=self.name, model=self.llm.model)
+                return AgentRunResult(
+                    answer=answer, steps=steps, agent=self.name, model=self.llm.model
+                )
 
             action = parsed.get("action")
             action_input = parsed.get("action_input") or {}
@@ -183,12 +202,18 @@ class ReactAgent(BaseAgent):
                 s = AgentStep(index=index, thought=parsed.get("thought"), observation=answer)
                 steps.append(s)
                 self._persist_step(record, s, raw)
-                return AgentRunResult(answer=answer, steps=steps,
-                                      agent=self.name, model=self.llm.model)
+                return AgentRunResult(
+                    answer=answer, steps=steps, agent=self.name, model=self.llm.model
+                )
 
             observation = self._execute(action, action_input)
-            s = AgentStep(index=index, thought=parsed.get("thought"), action=action,
-                          action_input=action_input, observation=observation)
+            s = AgentStep(
+                index=index,
+                thought=parsed.get("thought"),
+                action=action,
+                action_input=action_input,
+                observation=observation,
+            )
             steps.append(s)
             self._persist_step(record, s, raw)
 
@@ -199,10 +224,12 @@ class ReactAgent(BaseAgent):
         # 达到最大步数：强制收尾 —— 让模型基于已有观测给出最终回答
         try:
             final = self._chat(
-                messages + [{"role": "user", "content": _FORCE_FINAL_PROMPT}]).strip()
+                messages + [{"role": "user", "content": _FORCE_FINAL_PROMPT}]
+            ).strip()
         except Exception:
             last = steps[-1].observation if steps else "(none)"
-            final = (f"reached max steps ({self.settings.agent_max_steps}) without a "
-                     f"final answer; last observation: {last}")
-        return AgentRunResult(answer=final, steps=steps,
-                              agent=self.name, model=self.llm.model)
+            final = (
+                f"reached max steps ({self.settings.agent_max_steps}) without a "
+                f"final answer; last observation: {last}"
+            )
+        return AgentRunResult(answer=final, steps=steps, agent=self.name, model=self.llm.model)

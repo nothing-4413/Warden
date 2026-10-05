@@ -1,4 +1,5 @@
 """工具层：Tool 定义、注册表、内置示例工具。"""
+
 from __future__ import annotations
 
 from .base import Tool
@@ -9,18 +10,23 @@ from .registry import ToolNotFoundError, ToolRegistry
 
 __all__ = [
     "Tool",
-    "ToolRegistry",
     "ToolNotFoundError",
+    "ToolRegistry",
     "calculator_tool",
     "datetime_tool",
-    "make_search_notes_tool",
     "make_save_note_tool",
+    "make_search_notes_tool",
 ]
 
 
-def build_default_registry(retriever=None, top_k: int = 4,
-                           min_score: float = 0.0, indexer=None,
-                           rewrite: bool = False, rerank: bool = False) -> ToolRegistry:
+def build_default_registry(
+    retriever=None,
+    top_k: int = 4,
+    min_score: float = 0.0,
+    indexer=None,
+    rewrite: bool = False,
+    rerank: bool = False,
+) -> ToolRegistry:
     """默认工具注册表。
 
     传入 retriever 时额外注册 search_notes（RAG 记忆的"读"）；
@@ -31,8 +37,7 @@ def build_default_registry(retriever=None, top_k: int = 4,
     registry.register(calculator_tool)
     registry.register(datetime_tool)
     if retriever is not None:
-        registry.register(make_search_notes_tool(retriever, top_k, min_score,
-                                                 rewrite, rerank))
+        registry.register(make_search_notes_tool(retriever, top_k, min_score, rewrite, rerank))
     if indexer is not None:
         registry.register(make_save_note_tool(indexer))
     return registry

@@ -1,13 +1,15 @@
 """M4 Part1：MCP 客户端（stdio JSON-RPC）+ 工具适配。"""
+
 import sys
 
 import pytest
+from pydantic import ValidationError
 
 from app.mcp.client import MCPClient
 from app.mcp.tools import adapt_mcp_tool, build_input_model
 
 # 内联假 MCP server：真实走 stdio 协议，按 method 回包（print 必须 flush 避免管道缓冲阻塞）
-_FAKE_SERVER = '''
+_FAKE_SERVER = """
 import sys, json
 for line in sys.stdin:
     msg = json.loads(line)
@@ -31,7 +33,7 @@ for line in sys.stdin:
         args = msg["params"]["arguments"]
         print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {
             "content": [{"type": "text", "text": "echo:" + args.get("text", "")}]}}), flush=True)
-'''
+"""
 
 
 def _make_client():
@@ -59,7 +61,7 @@ def test_build_input_model_required_and_optional():
     obj = model.model_validate({"text": "hi"})  # times 可选缺省
     assert obj.text == "hi"
     assert obj.times is None
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         model.model_validate({})  # text 必填
 
 
@@ -67,7 +69,9 @@ def test_adapt_mcp_tool_runs_through_client():
     client = _make_client()
     try:
         tool = adapt_mcp_tool(
-            client, "echo", "echo back",
+            client,
+            "echo",
+            "echo back",
             {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
         )
         assert tool.run({"text": "hello"}) == "echo:hello"

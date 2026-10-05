@@ -1,4 +1,5 @@
 """每日资讯/论文简报：抓 RSS → 去重（跨次运行） → LLM 摘要 → 通知。"""
+
 from __future__ import annotations
 
 import json
@@ -112,7 +113,9 @@ class NewsDigestTask(BaseTask):
         digest = ctx.llm.chat(self._prompt(fresh))
         self._save_seen(seen | {i.link for i in fresh})
         return TaskResult(
-            self.name, "ok", digest,
+            self.name,
+            "ok",
+            digest,
             {"total": len(items), "new": len(fresh), "errors": errors},
         )
 

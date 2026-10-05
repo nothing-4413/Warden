@@ -1,4 +1,5 @@
 """NotesIndexer：把个人笔记目录索引成向量（分块 → 嵌入 → 入库）。"""
+
 from __future__ import annotations
 
 import hashlib
@@ -42,7 +43,7 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 100) -> list[str
 def _append_hard(chunks: list[str], text: str, chunk_size: int, overlap: int) -> None:
     while len(text) > chunk_size:
         chunks.append(text[:chunk_size])
-        text = text[chunk_size - overlap:] if overlap else text[chunk_size:]
+        text = text[chunk_size - overlap :] if overlap else text[chunk_size:]
     if text.strip():
         chunks.append(text)
 
@@ -64,8 +65,8 @@ class NotesIndexer:
             return 0
         # 一次嵌入整篇文本的所有 chunk（单次 HTTP 请求）
         embeddings = self.embedder.embed(chunks)
-        for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
-            cid = hashlib.sha1(f"{doc_id}:{i}".encode("utf-8")).hexdigest()
+        for i, (chunk, emb) in enumerate(zip(chunks, embeddings, strict=True)):
+            cid = hashlib.sha1(f"{doc_id}:{i}".encode()).hexdigest()
             self.store.add(cid, doc_id, chunk, emb)
         return len(chunks)
 

@@ -20,6 +20,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=7.0",
+    "ruff>=0.16",
 ]
 
 [tool.setuptools.packages.find]
@@ -27,3 +29,19 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+# 行宽交给 ruff format 折行；E501 关闭，避免长中文字符串/URL 无法折行导致误报
+line-length = 100
+extend-exclude = ["app/static"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "RUF100", "RUF022"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"

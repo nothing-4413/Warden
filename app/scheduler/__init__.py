@@ -5,9 +5,9 @@ from .runner import build_scheduler, run_once
 __all__ = [
     "BaseTask",
     "Services",
-    "TaskResult",
     "TaskNotFoundError",
     "TaskRegistry",
+    "TaskResult",
     "build_scheduler",
     "run_once",
 ]

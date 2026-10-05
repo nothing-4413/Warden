@@ -7,6 +7,7 @@ M6：同一条通路也用来对接 InferGate 网关——带上会话/租户/�
 409 in_flight 当可重试、把幂等回放当正常成功、把 409 conflict 当键派生的 bug。
 端点完全不认识这些头时（裸 OpenAI / Ollama / 旧网关）行为与以前一模一样。
 """
+
 from __future__ import annotations
 
 import json
@@ -56,6 +57,7 @@ class LLMError(Exception):
 @dataclass
 class Usage:
     """一次 LLM 调用的 token 用量。"""
+
     prompt_tokens: int = 0
     completion_tokens: int = 0
 
@@ -63,6 +65,7 @@ class Usage:
 @dataclass
 class ToolCall:
     """模型发起的一次原生工具调用（OpenAI function-calling 协议）。"""
+
     id: str
     name: str
     arguments: dict
@@ -75,6 +78,7 @@ class GatewayOutcome:
     不是 InferGate 时全是默认值；replayed=True 就是"这次没有真的打到上游、
     Warden 没有被重复计费"的证据。
     """
+
     key: str = ""
     session_id: str = ""
     replayed: bool = False
@@ -126,8 +130,7 @@ def _retry_after_s(resp, default: float) -> float:
 
 
 class LLMClient:
-    def __init__(self, settings: Settings,
-                 capabilities: CapabilityCache | None = None) -> None:
+    def __init__(self, settings: Settings, capabilities: CapabilityCache | None = None) -> None:
         self._settings = settings
         self._base_url = settings.llm_base_url.rstrip("/")
         self._api_key = settings.llm_api_key
@@ -136,7 +139,8 @@ class LLMClient:
         self._timeout = settings.llm_timeout_s
         # 能力报告进程内缓存（M6）：默认走全局单例，测试可注入自己的
         self._capabilities = capabilities or get_capability_cache(
-            settings.gateway_capabilities_ttl_s)
+            settings.gateway_capabilities_ttl_s
+        )
         self.last_usage: Usage | None = None
         # 最近一次调用在网关侧的身份/回放情况（M6）
         self.last_gateway: GatewayOutcome | None = None
@@ -163,8 +167,9 @@ class LLMClient:
         self._record_usage(data.get("usage") or {})
         return content
 
-    def chat_with_tools(self, messages: list[dict],
-                        tools: list[dict]) -> tuple[str, list[ToolCall]]:
+    def chat_with_tools(
+        self, messages: list[dict], tools: list[dict]
+    ) -> tuple[str, list[ToolCall]]:
         """原生 function calling：带 tools 请求，返回 (文本内容, 工具调用列表)。
 
         模型二选一：返回 content（最终回答）或返回 tool_calls（要求执行工具）。
@@ -188,8 +193,9 @@ class LLMClient:
                 args = json.loads(tc["function"].get("arguments") or "{}")
             except (json.JSONDecodeError, TypeError):
                 args = {}
-            calls.append(ToolCall(id=tc.get("id") or "", name=tc["function"]["name"],
-                                  arguments=args))
+            calls.append(
+                ToolCall(id=tc.get("id") or "", name=tc["function"]["name"], arguments=args)
+            )
         return content, calls
 
     # ---- M6：InferGate 网关头 ----
@@ -213,7 +219,8 @@ class LLMClient:
             return headers
         headers[HEADER_SESSION] = session_id
         headers[HEADER_IDEMPOTENCY_KEY] = derive_idempotency_key(
-            session_id=session_id, messages=messages, payload=payload)
+            session_id=session_id, messages=messages, payload=payload
+        )
         return headers
 
     def _post(self, payload: dict) -> dict:
@@ -248,15 +255,22 @@ class LLMClient:
                 logger.error(
                     "InferGate 幂等键冲突（%s, key=%s, session=%s）：同一个键被用于不同的"
                     "请求体。这是 Idempotency-Key 派生的问题，重试不会有结果，直接失败。",
-                    TYPE_IDEMPOTENCY_CONFLICT, key or "-",
-                    gateway_headers.get(HEADER_SESSION, "-"))
+                    TYPE_IDEMPOTENCY_CONFLICT,
+                    key or "-",
+                    gateway_headers.get(HEADER_SESSION, "-"),
+                )
                 raise LLMError(f"LLM returned {resp.status_code}: {resp.text[:500]}")
             if kind == TYPE_IDEMPOTENCY_IN_FLIGHT and attempt < max_attempts:
                 delay = _retry_after_s(resp, self._settings.gateway_retry_after_s)
                 logger.warning(
                     "InferGate 报告同键请求仍在飞行（%s, key=%s）：%.2fs 后重试同一键"
-                    "（第 %d/%d 次尝试）", TYPE_IDEMPOTENCY_IN_FLIGHT, key or "-",
-                    delay, attempt, max_attempts)
+                    "（第 %d/%d 次尝试）",
+                    TYPE_IDEMPOTENCY_IN_FLIGHT,
+                    key or "-",
+                    delay,
+                    attempt,
+                    max_attempts,
+                )
                 if self._settings.metrics_enabled:
                     record_in_flight_retry(self._model)
                 time.sleep(delay)
@@ -264,9 +278,9 @@ class LLMClient:
             break
         if resp is None:  # max_attempts >= 1，正常到不了这里
             raise LLMError("LLM request failed: no response")
-        self._record_gateway(resp, key=key,
-                             session_id=gateway_headers.get(HEADER_SESSION, ""),
-                             attempts=attempts)
+        self._record_gateway(
+            resp, key=key, session_id=gateway_headers.get(HEADER_SESSION, ""), attempts=attempts
+        )
         if resp.status_code != 200:
             raise LLMError(f"LLM returned {resp.status_code}: {resp.text[:500]}")
         return resp.json()
@@ -293,9 +307,11 @@ class LLMClient:
             logger.info(
                 "InferGate 幂等回放：本轮由网关回放已存答案，未重复上游调用（key=%s, "
                 "origin=%s, age=%dms, upstream=%s）",
-                key or "-", self.last_gateway.replay_origin or "-",
+                key or "-",
+                self.last_gateway.replay_origin or "-",
                 self.last_gateway.replay_age_ms,
-                self.last_gateway.replay_upstream or "-")
+                self.last_gateway.replay_upstream or "-",
+            )
             if self._settings.metrics_enabled:
                 record_idempotent_replay(self._model)
 
@@ -305,8 +321,11 @@ class LLMClient:
         if not self._settings.gateway_capabilities_enabled:
             return None
         return self._capabilities.model(
-            self._base_url, model or self._model, api_key=self._api_key,
-            timeout=min(float(self._timeout), _CAPABILITY_TIMEOUT_S))
+            self._base_url,
+            model or self._model,
+            api_key=self._api_key,
+            timeout=min(float(self._timeout), _CAPABILITY_TIMEOUT_S),
+        )
 
     def context_window(self, model: str | None = None) -> int | None:
         """模型的上下文窗口（token）；未知 → None，调用方自行回退。
@@ -334,7 +353,9 @@ class LLMClient:
             completion_tokens=int(usage.get("completion_tokens") or 0),
         )
         if self._settings.metrics_enabled:
-            cost = compute_cost(self._settings, self.last_usage.prompt_tokens,
-                                self.last_usage.completion_tokens)
-            record_llm_usage(self._model, self.last_usage.prompt_tokens,
-                             self.last_usage.completion_tokens, cost)
+            cost = compute_cost(
+                self._settings, self.last_usage.prompt_tokens, self.last_usage.completion_tokens
+            )
+            record_llm_usage(
+                self._model, self.last_usage.prompt_tokens, self.last_usage.completion_tokens, cost
+            )

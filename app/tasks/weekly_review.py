@@ -1,4 +1,5 @@
 """每周复盘：汇总近 7 天笔记 + 提交记录 → LLM 生成周报。"""
+
 from __future__ import annotations
 
 import subprocess
@@ -35,7 +36,10 @@ class WeeklyReviewTask(BaseTask):
         try:
             r = subprocess.run(
                 ["git", "log", "--oneline", f"--since={days} days ago"],
-                cwd=self._repo, capture_output=True, text=True, timeout=15,
+                cwd=self._repo,
+                capture_output=True,
+                text=True,
+                timeout=15,
             )
             return [ln for ln in r.stdout.splitlines() if ln.strip()]
         except Exception:  # 非 git 仓库 / git 不可用时静默降级
@@ -46,7 +50,9 @@ class WeeklyReviewTask(BaseTask):
         commits = self._recent_commits()
         report = ctx.llm.chat(self._prompt(notes, commits))
         return TaskResult(
-            self.name, "ok", report,
+            self.name,
+            "ok",
+            report,
             {"notes": len(notes), "commits": len(commits)},
         )
 
@@ -56,7 +62,9 @@ class WeeklyReviewTask(BaseTask):
             "总结本周做了什么、有哪些进展与收获、下周可以推进什么。直接输出 Markdown。"
         )
         user = (
-            "## 本周笔记\n" + ("\n".join(notes) or "（无）")
-            + "\n\n## 本周提交\n" + ("\n".join(f"- {c}" for c in commits[:50]) or "（无）")
+            "## 本周笔记\n"
+            + ("\n".join(notes) or "（无）")
+            + "\n\n## 本周提交\n"
+            + ("\n".join(f"- {c}" for c in commits[:50]) or "（无）")
         )
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]

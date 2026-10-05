@@ -1,4 +1,5 @@
 """断点续跑：run 崩溃后 resume 从中断处继续并正确持久化。"""
+
 from app.agent.planact import PlanActAgent
 from app.agent.react import ReactAgent
 from app.config import Settings
@@ -35,14 +36,16 @@ def test_react_resume_after_tool_step(tmp_path):
     s = _settings()
 
     # run：先成功调 calculator，第二次 chat 抛异常崩溃
-    llm1 = ScriptLLM([
-        '{"thought": "do it", "action": "calculator", "action_input": {"expression": "2+2"}}',
-        RuntimeError("boom"),
-    ])
+    llm1 = ScriptLLM(
+        [
+            '{"thought": "do it", "action": "calculator", "action_input": {"expression": "2+2"}}',
+            RuntimeError("boom"),
+        ]
+    )
     a1 = ReactAgent(s, llm1, tools, store=store)
     try:
         a1.run([{"role": "user", "content": "2+2?"}])
-        assert False, "should have raised"
+        raise AssertionError("should have raised")
     except RuntimeError:
         pass
 
@@ -67,14 +70,16 @@ def test_planact_resume_skips_done_steps(tmp_path):
     s = _settings()
 
     # run：plan 1 个工具步；summarize 阶段抛异常
-    llm1 = ScriptLLM([
-        '{"plan": [{"step": "compute", "tool": "calculator", "args": {"expression": "3*4"}}]}',
-        RuntimeError("summarize failed"),
-    ])
+    llm1 = ScriptLLM(
+        [
+            '{"plan": [{"step": "compute", "tool": "calculator", "args": {"expression": "3*4"}}]}',
+            RuntimeError("summarize failed"),
+        ]
+    )
     a1 = PlanActAgent(s, llm1, tools, store=store)
     try:
         a1.run([{"role": "user", "content": "3*4?"}])
-        assert False, "should have raised"
+        raise AssertionError("should have raised")
     except RuntimeError:
         pass
 

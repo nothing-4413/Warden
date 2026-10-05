@@ -1,4 +1,5 @@
 """with_retry 行为：成功 / 重试后成功 / 耗尽抛错 / retriable / on_attempt 计数。"""
+
 from app.harness.retry import with_retry
 
 
@@ -28,7 +29,7 @@ def test_exhaust_raises_last():
 
     try:
         with_retry(always_fail, attempts=3, backoff_s=0)
-        assert False, "should have raised"
+        raise AssertionError("should have raised")
     except ValueError as exc:
         assert str(exc) == "last error"
 
@@ -42,7 +43,7 @@ def test_retriable_false_does_not_retry():
 
     try:
         with_retry(fail, attempts=3, backoff_s=0, retriable=lambda e: False)
-        assert False, "should have raised"
+        raise AssertionError("should have raised")
     except RuntimeError:
         pass
     assert state["n"] == 1
@@ -56,7 +57,7 @@ def test_on_attempt_counts_every_try():
 
     try:
         with_retry(fail, attempts=3, backoff_s=0, on_attempt=seen.append)
-        assert False, "should have raised"
+        raise AssertionError("should have raised")
     except RuntimeError:
         pass
     assert seen == [1, 2, 3]

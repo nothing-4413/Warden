@@ -9,17 +9,13 @@
 可解释、可控、无额外 LLM 调用；逐步二次推理留作后续扩展点。
 断点续跑：plan 与已完成步骤都落库，resume 时跳过已执行步骤、直接接着 Act/Summarize。
 """
+
 from __future__ import annotations
 
 import json
-from typing import Any
 
-from ..config import Settings
 from ..harness import RunRecord, with_retry
-from ..llm import LLMClient
-from ..tools import ToolRegistry
 from .base import AgentRunResult, AgentStep, BaseAgent, extract_json
-
 
 _PLAN_TEMPLATE = """\
 You are Warden, a planning agent. Break the user's request into an ordered list of concrete steps.
@@ -97,11 +93,20 @@ class PlanActAgent(BaseAgent):
         # 已完成的步骤数 = len(record.steps)，从那里接着执行
         return self._execute_plan(request, plan, record, len(record.steps))
 
-    def _execute_plan(self, request: str, plan: list, record: RunRecord | None,
-                      start_index: int) -> AgentRunResult:
+    def _execute_plan(
+        self, request: str, plan: list, record: RunRecord | None, start_index: int
+    ) -> AgentRunResult:
         done = record.steps if record is not None else []
-        steps = [AgentStep(index=d["index"], thought=d.get("step"), action=d.get("tool"),
-                           action_input=d.get("args"), observation=d.get("result")) for d in done]
+        steps = [
+            AgentStep(
+                index=d["index"],
+                thought=d.get("step"),
+                action=d.get("tool"),
+                action_input=d.get("args"),
+                observation=d.get("result"),
+            )
+            for d in done
+        ]
         results = [{"step": d.get("step"), "result": d.get("result")} for d in done]
 
         # 2. Act（从 start_index 继续，支持断点续跑；工具失败时动态重规划剩余步骤）
@@ -114,12 +119,22 @@ class PlanActAgent(BaseAgent):
             args = item.get("args") or {}
             if tool:
                 observation = self._execute(tool, args)
-                steps.append(AgentStep(index=i, thought=step_desc, action=tool,
-                                       action_input=args, observation=observation))
+                steps.append(
+                    AgentStep(
+                        index=i,
+                        thought=step_desc,
+                        action=tool,
+                        action_input=args,
+                        observation=observation,
+                    )
+                )
                 results.append({"step": step_desc, "result": observation})
                 # 失败检测（_execute 的错误以 "error: " 前缀字符串回传）+ 动态重规划
-                if (isinstance(observation, str) and observation.startswith("error:")
-                        and replans_left > 0):
+                if (
+                    isinstance(observation, str)
+                    and observation.startswith("error:")
+                    and replans_left > 0
+                ):
                     replans_left -= 1
                     replanned = self._replan(request, plan, i, item, observation)
                     if replanned:
@@ -133,34 +148,54 @@ class PlanActAgent(BaseAgent):
                 steps.append(AgentStep(index=i, thought=step_desc))
                 results.append({"step": step_desc, "result": "(reasoning step)"})
             if record is not None:
-                record.steps.append({"index": i, "step": step_desc, "tool": tool,
-                                     "args": args, "result": results[-1]["result"]})
+                record.steps.append(
+                    {
+                        "index": i,
+                        "step": step_desc,
+                        "tool": tool,
+                        "args": args,
+                        "result": results[-1]["result"],
+                    }
+                )
                 self.store.update(record)
             i += 1
 
         # 3. Summarize
         summary_messages = [
             {"role": "system", "content": "You are Warden, summarizing an executed plan."},
-            {"role": "user", "content": _SUMMARIZE_TEMPLATE.format(
-                request=request, results=json.dumps(results, ensure_ascii=False))},
+            {
+                "role": "user",
+                "content": _SUMMARIZE_TEMPLATE.format(
+                    request=request, results=json.dumps(results, ensure_ascii=False)
+                ),
+            },
         ]
         answer = self._chat(summary_messages).strip()
 
         return AgentRunResult(answer=answer, steps=steps, agent=self.name, model=self.llm.model)
 
-    def _replan(self, request: str, plan: list, failed_index: int,
-                failed_item: dict, error: str) -> list:
+    def _replan(
+        self, request: str, plan: list, failed_index: int, failed_item: dict, error: str
+    ) -> list:
         """工具失败后让模型重规划剩余步骤；失败则返回 []（保持原计划剩余步骤）。"""
-        remaining = plan[failed_index + 1:]
+        remaining = plan[failed_index + 1 :]
         messages = [
-            {"role": "system",
-             "content": _REPLAN_TEMPLATE.format(tools=self.tools.render_prompt())},
-            {"role": "user", "content": json.dumps({
-                "request": request,
-                "failed_step": failed_item.get("step", ""),
-                "error": error,
-                "remaining_steps": remaining,
-            }, ensure_ascii=False)},
+            {
+                "role": "system",
+                "content": _REPLAN_TEMPLATE.format(tools=self.tools.render_prompt()),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "request": request,
+                        "failed_step": failed_item.get("step", ""),
+                        "error": error,
+                        "remaining_steps": remaining,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
         ]
         try:
             raw = self._chat(messages)

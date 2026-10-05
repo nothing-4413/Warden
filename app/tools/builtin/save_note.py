@@ -4,6 +4,7 @@
 Agent 在会话中得出重要结论/决策时主动 save_note，之后（含下一次会话）可用
 search_notes 检索到。写入走 NotesIndexer.index_text（分块 → 嵌入 → 入库）。
 """
+
 from __future__ import annotations
 
 import uuid
@@ -24,15 +25,14 @@ def make_save_note_tool(indexer: NotesIndexer) -> Tool:
         # 每条记忆用独立 doc_id（含随机后缀），避免与已有记忆的 chunk id 冲突
         doc_id = f"note/{topic}/{uuid.uuid4().hex[:8]}"
         n = indexer.index_text(content, doc_id)
-        return (f"已记住 {n} 段到长期记忆（doc_id={doc_id}）。"
-                f"之后可用 search_notes 检索到这段记忆。")
+        return f"已记住 {n} 段到长期记忆（doc_id={doc_id}）。之后可用 search_notes 检索到这段记忆。"
 
     return Tool(
         name="save_note",
         description="Save an important fact, conclusion, or decision into long-term "
-                    "memory (RAG store), so it can be recalled in later sessions via "
-                    "search_notes. Use it when the user or you produce something worth "
-                    "remembering. Give a short topic describing what the note is about.",
+        "memory (RAG store), so it can be recalled in later sessions via "
+        "search_notes. Use it when the user or you produce something worth "
+        "remembering. Give a short topic describing what the note is about.",
         input_model=SaveNoteInput,
         func=_save,
     )

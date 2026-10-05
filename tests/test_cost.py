@@ -1,4 +1,5 @@
 """M5：LLM 成本统计（token 用量 + 成本折算）。"""
+
 import httpx
 from prometheus_client import REGISTRY
 
@@ -16,12 +17,19 @@ def test_compute_cost():
 
 def test_record_llm_usage_increments_counters():
     record_llm_usage("cost_test", prompt_tokens=10, completion_tokens=5, cost=0.001)
-    assert REGISTRY.get_sample_value(
-        "warden_tokens_total", {"model": "cost_test", "direction": "prompt"}) == 10.0
-    assert REGISTRY.get_sample_value(
-        "warden_tokens_total", {"model": "cost_test", "direction": "completion"}) == 5.0
-    assert REGISTRY.get_sample_value(
-        "warden_cost_dollars_total", {"model": "cost_test"}) == 0.001
+    assert (
+        REGISTRY.get_sample_value(
+            "warden_tokens_total", {"model": "cost_test", "direction": "prompt"}
+        )
+        == 10.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "warden_tokens_total", {"model": "cost_test", "direction": "completion"}
+        )
+        == 5.0
+    )
+    assert REGISTRY.get_sample_value("warden_cost_dollars_total", {"model": "cost_test"}) == 0.001
 
 
 def test_llm_client_captures_usage(monkeypatch):

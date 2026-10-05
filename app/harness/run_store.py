@@ -3,6 +3,7 @@
 设计取舍：M2 用 stdlib sqlite3 + WAL，零外部服务即可跑通最小版本；
 接口只暴露 start/update/get/list，后续换 PostgreSQL 只改这一处。
 """
+
 from __future__ import annotations
 
 import json
@@ -75,8 +76,16 @@ class RunStore:
     def update(self, run: RunRecord) -> None:
         self._conn.execute(
             "UPDATE runs SET status=?, output=?, error=?, steps=?, meta=?, attempts=?, finished_at=? WHERE id=?",
-            (run.status, run.output, run.error, self._dump(run.steps), self._dump(run.meta),
-             run.attempts, run.finished_at, run.id),
+            (
+                run.status,
+                run.output,
+                run.error,
+                self._dump(run.steps),
+                self._dump(run.meta),
+                run.attempts,
+                run.finished_at,
+                run.id,
+            ),
         )
         self._conn.commit()
 
@@ -105,9 +114,18 @@ class RunStore:
     @staticmethod
     def _tuple(run: RunRecord) -> tuple:
         return (
-            run.id, run.kind, run.name, run.status, RunStore._dump(run.input),
-            RunStore._dump(run.meta), run.output, run.error, RunStore._dump(run.steps),
-            run.attempts, run.started_at, run.finished_at,
+            run.id,
+            run.kind,
+            run.name,
+            run.status,
+            RunStore._dump(run.input),
+            RunStore._dump(run.meta),
+            run.output,
+            run.error,
+            RunStore._dump(run.steps),
+            run.attempts,
+            run.started_at,
+            run.finished_at,
         )
 
     @staticmethod
@@ -121,8 +139,16 @@ class RunStore:
                 return None
 
         return RunRecord(
-            id=row["id"], kind=row["kind"], name=row["name"], status=row["status"],
-            input=_load(row["input"]), meta=_load(row["meta"]) or {}, output=row["output"],
-            error=row["error"], steps=_load(row["steps"]) or [], attempts=row["attempts"],
-            started_at=row["started_at"], finished_at=row["finished_at"],
+            id=row["id"],
+            kind=row["kind"],
+            name=row["name"],
+            status=row["status"],
+            input=_load(row["input"]),
+            meta=_load(row["meta"]) or {},
+            output=row["output"],
+            error=row["error"],
+            steps=_load(row["steps"]) or [],
+            attempts=row["attempts"],
+            started_at=row["started_at"],
+            finished_at=row["finished_at"],
         )

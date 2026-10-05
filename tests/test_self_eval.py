@@ -1,4 +1,5 @@
 """置信度自评（self-eval）：验证开启 / 关闭 / 失败 / 提示词四态，不发真实网络。"""
+
 from app.agent.react import ReactAgent
 from app.config import Settings
 from app.tools import build_default_registry
@@ -15,9 +16,11 @@ class FakeLLM:
 
 
 def test_self_eval_off_by_default():
-    llm = FakeLLM([
-        '{"thought": "done", "final_answer": "the result is 4"}',
-    ])
+    llm = FakeLLM(
+        [
+            '{"thought": "done", "final_answer": "the result is 4"}',
+        ]
+    )
     agent = ReactAgent(Settings(), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "2+2?"}])
 
@@ -26,10 +29,12 @@ def test_self_eval_off_by_default():
 
 
 def test_self_eval_attaches_confidence_when_enabled():
-    llm = FakeLLM([
-        '{"thought": "done", "final_answer": "the result is 4"}',
-        '{"confidence": 0.9, "reason": "deterministic arithmetic"}',
-    ])
+    llm = FakeLLM(
+        [
+            '{"thought": "done", "final_answer": "the result is 4"}',
+            '{"confidence": 0.9, "reason": "deterministic arithmetic"}',
+        ]
+    )
     agent = ReactAgent(Settings(self_eval_enabled=True), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "2+2?"}])
 
@@ -38,10 +43,12 @@ def test_self_eval_attaches_confidence_when_enabled():
 
 def test_self_eval_failure_is_silent():
     """自评失败（LLM 返回垃圾）静默返回 None，绝不影响主流程。"""
-    llm = FakeLLM([
-        '{"thought": "done", "final_answer": "the result is 4"}',
-        "not json at all",
-    ])
+    llm = FakeLLM(
+        [
+            '{"thought": "done", "final_answer": "the result is 4"}',
+            "not json at all",
+        ]
+    )
     agent = ReactAgent(Settings(self_eval_enabled=True), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "2+2?"}])
 

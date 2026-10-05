@@ -7,6 +7,7 @@
 
 Blackboard = 线程安全的共享字典；BlackboardTeam = 顺序执行一组 (agent, role) 的协调器。
 """
+
 from __future__ import annotations
 
 import threading

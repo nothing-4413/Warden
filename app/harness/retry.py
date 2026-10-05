@@ -1,9 +1,11 @@
 """重试：带指数退避的通用重试包装。"""
+
 from __future__ import annotations
 
 import logging
 import time
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -29,12 +31,12 @@ def with_retry(
             on_attempt(i + 1)
         try:
             return fn()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if retriable is not None and not retriable(exc):
                 raise
             last = exc
             if i < attempts - 1:
-                delay = backoff_s * (2 ** i)
+                delay = backoff_s * (2**i)
                 log.warning("retry %d/%d after %.2fs: %s", i + 1, attempts, delay, exc)
                 time.sleep(delay)
     assert last is not None

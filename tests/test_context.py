@@ -1,4 +1,5 @@
 """多轮上下文窗口（滑动窗口 + 摘要压缩）测试。"""
+
 from app.agent.react import ReactAgent
 from app.config import Settings
 from app.tools import build_default_registry
@@ -60,10 +61,12 @@ def test_summary_failure_degrades_to_window():
 
 def test_run_compresses_long_history_before_loop():
     """run() 入口集成：超限历史先被摘要压缩（消耗 1 次 LLM 调用），再进入循环。"""
-    llm = FakeLLM([
-        "conversation summary",
-        '{"thought": "t", "final_answer": "ok"}',
-    ])
+    llm = FakeLLM(
+        [
+            "conversation summary",
+            '{"thought": "t", "final_answer": "ok"}',
+        ]
+    )
     agent = ReactAgent(Settings(context_max_messages=2), llm, build_default_registry())
     history = [
         {"role": "user", "content": "a"},

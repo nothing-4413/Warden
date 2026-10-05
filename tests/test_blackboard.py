@@ -1,4 +1,5 @@
 """Blackboard：多 Agent 共享工作记忆（黑板），用假 LLM 验证写→读协作。"""
+
 from app.agent.blackboard import Blackboard, BlackboardTeam
 from app.agent.react import ReactAgent
 from app.config import Settings
@@ -43,19 +44,33 @@ def test_blackboard_team_researcher_writes_writer_reads():
 
     researcher_tools = ToolRegistry()
     researcher_tools.register(make_blackboard_write_tool(bb))
-    researcher = ReactAgent(settings, FakeLLM([
-        '{"thought": "research", "action": "blackboard_write", '
-        '"action_input": {"key": "findings", "value": "the answer is 42"}}',
-        '{"thought": "handoff", "final_answer": "findings recorded"}',
-    ]), researcher_tools, name="researcher")
+    researcher = ReactAgent(
+        settings,
+        FakeLLM(
+            [
+                '{"thought": "research", "action": "blackboard_write", '
+                '"action_input": {"key": "findings", "value": "the answer is 42"}}',
+                '{"thought": "handoff", "final_answer": "findings recorded"}',
+            ]
+        ),
+        researcher_tools,
+        name="researcher",
+    )
 
     writer_tools = ToolRegistry()
     writer_tools.register(make_blackboard_read_tool(bb))
-    writer = ReactAgent(settings, FakeLLM([
-        '{"thought": "read", "action": "blackboard_read", '
-        '"action_input": {"key": "findings"}}',
-        '{"thought": "synthesize", "final_answer": "the answer is 42"}',
-    ]), writer_tools, name="writer")
+    writer = ReactAgent(
+        settings,
+        FakeLLM(
+            [
+                '{"thought": "read", "action": "blackboard_read", '
+                '"action_input": {"key": "findings"}}',
+                '{"thought": "synthesize", "final_answer": "the answer is 42"}',
+            ]
+        ),
+        writer_tools,
+        name="writer",
+    )
 
     team = BlackboardTeam(bb)
     team.add(researcher, "research and write findings to the blackboard")

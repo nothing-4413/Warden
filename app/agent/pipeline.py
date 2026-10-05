@@ -6,6 +6,7 @@ Orchestrator（M4）是"路由"——一个 LLM 选一个专家、单跳转发�
 
 流水线：Researcher（带工具，检索/查证）→ Critic（无工具，挑错补缺并给出改进版最终答案）。
 """
+
 from __future__ import annotations
 
 from .base import AgentRunResult, BaseAgent
@@ -30,9 +31,7 @@ class CriticPipeline:
 
         # 用 f-string 拼接而非 .format()：findings 是模型/用户文本，可能含 {} 破坏 format
         critic_prompt = (
-            f"Question: {question}\n\n"
-            f"Research findings:\n{findings}\n\n"
-            f"{_CRITIC_INSTRUCTION}"
+            f"Question: {question}\n\nResearch findings:\n{findings}\n\n{_CRITIC_INSTRUCTION}"
         )
         review = self.critic.run([{"role": "user", "content": critic_prompt}])
 

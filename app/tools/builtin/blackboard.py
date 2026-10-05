@@ -5,6 +5,7 @@
 注意：黑板是进程内、易失的（与长期记忆 save_note 不同——save_note 入库可跨会话，
 黑板只在一次多 Agent 会话内共享）。
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -31,8 +32,8 @@ def make_blackboard_write_tool(blackboard: Any) -> Tool:
     return Tool(
         name="blackboard_write",
         description="Write an intermediate result to the shared blackboard (multi-agent "
-                    "working memory). Use it to hand off findings/decisions to other agents "
-                    "in this session. Pick a short, descriptive key.",
+        "working memory). Use it to hand off findings/decisions to other agents "
+        "in this session. Pick a short, descriptive key.",
         input_model=BlackboardWriteInput,
         func=_write,
     )
@@ -46,7 +47,7 @@ def make_blackboard_read_tool(blackboard: Any) -> Tool:
     return Tool(
         name="blackboard_read",
         description="Read a value previously written to the shared blackboard by another "
-                    "agent. Use it to retrieve intermediate results handed off to you.",
+        "agent. Use it to retrieve intermediate results handed off to you.",
         input_model=BlackboardReadInput,
         func=_read,
     )

@@ -1,4 +1,5 @@
 """文件通知器：把报告写成 Markdown 存到 report_dir。"""
+
 from __future__ import annotations
 
 import re

@@ -1,4 +1,5 @@
 """save_note：长期记忆"写"侧（读 + 写闭环）测试。"""
+
 from app.config import Settings
 from app.memory.indexer import NotesIndexer
 from app.memory.retriever import Retriever
@@ -57,7 +58,8 @@ def test_save_then_search_closed_loop(tmp_path):
     registry = build_default_registry(retriever=retriever, indexer=indexer)
 
     save_result = registry.get("save_note").run(
-        {"content": "the warden project uses a self-built react loop", "topic": "architecture"})
+        {"content": "the warden project uses a self-built react loop", "topic": "architecture"}
+    )
     assert "记住" in save_result
 
     search_result = registry.get("search_notes").run({"query": "react loop"})

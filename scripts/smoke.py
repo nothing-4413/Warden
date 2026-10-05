@@ -6,6 +6,7 @@
 
 退出码：0 = 全部通过；1 = 至少一项失败（或 LLM 不可达）。
 """
+
 from __future__ import annotations
 
 import sys
@@ -14,17 +15,17 @@ from pathlib import Path
 # 兼容 `python scripts/smoke.py`（脚本目录在 sys.path，而非仓库根）
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.agent.function_call import FunctionCallAgent  # noqa: E402
-from app.agent.orchestrator import Orchestrator  # noqa: E402
-from app.agent.pipeline import CriticPipeline  # noqa: E402
-from app.agent.planact import PlanActAgent  # noqa: E402
-from app.agent.react import ReactAgent  # noqa: E402
-from app.config import get_settings  # noqa: E402
-from app.harness.run_store import RunStore  # noqa: E402
-from app.llm import LLMClient  # noqa: E402
-from app.memory import Retriever, VectorStore  # noqa: E402
-from app.memory.embeddings import EmbeddingClient  # noqa: E402
-from app.tools import ToolRegistry, build_default_registry  # noqa: E402
+from app.agent.function_call import FunctionCallAgent
+from app.agent.orchestrator import Orchestrator
+from app.agent.pipeline import CriticPipeline
+from app.agent.planact import PlanActAgent
+from app.agent.react import ReactAgent
+from app.config import get_settings
+from app.harness.run_store import RunStore
+from app.llm import LLMClient
+from app.memory import Retriever, VectorStore
+from app.memory.embeddings import EmbeddingClient
+from app.tools import ToolRegistry, build_default_registry
 
 
 def _check(name: str, fn) -> bool:
@@ -60,8 +61,9 @@ def main() -> int:
     embedder = EmbeddingClient(settings)
     mem_store = VectorStore(settings.memory_db_path)
     retriever = Retriever(embedder, mem_store)
-    registry = build_default_registry(retriever=retriever, top_k=settings.retrieval_top_k,
-                                      min_score=settings.retrieval_min_score)
+    registry = build_default_registry(
+        retriever=retriever, top_k=settings.retrieval_top_k, min_score=settings.retrieval_min_score
+    )
 
     # 3. 三种自研循环（各自用计算器工具验证真实工具调用）
     react = ReactAgent(settings, llm, registry, store=store)
@@ -69,28 +71,54 @@ def main() -> int:
     fc = FunctionCallAgent(settings, llm, registry, store=store)
 
     results = [
-        _check("react", lambda: react.run(
-            [{"role": "user", "content": "用计算器算 3 * 4，只回答数字。"}]).answer),
-        _check("planact", lambda: planact.run(
-            [{"role": "user", "content": "用计算器算 12 / 4，只回答数字。"}]).answer),
-        _check("function_call", lambda: fc.run(
-            [{"role": "user", "content": "用计算器算 7 + 8，只回答数字。"}]).answer),
+        _check(
+            "react",
+            lambda: (
+                react.run([{"role": "user", "content": "用计算器算 3 * 4，只回答数字。"}]).answer
+            ),
+        ),
+        _check(
+            "planact",
+            lambda: (
+                planact.run([{"role": "user", "content": "用计算器算 12 / 4，只回答数字。"}]).answer
+            ),
+        ),
+        _check(
+            "function_call",
+            lambda: fc.run([{"role": "user", "content": "用计算器算 7 + 8，只回答数字。"}]).answer,
+        ),
     ]
 
     # 4. 多 Agent：researcher（带工具）→ critic（挑错补缺）接力
-    researcher = ReactAgent(settings, llm, registry, store=store, name="researcher",
-                            description="检索并查证事实")
-    critic = ReactAgent(settings, llm, ToolRegistry(), store=store, name="critic",
-                        description="挑错补缺并改写最终答案")
-    results.append(_check("research", lambda: CriticPipeline(researcher, critic).run(
-        "2 + 2 等于几？").answer))
+    researcher = ReactAgent(
+        settings, llm, registry, store=store, name="researcher", description="检索并查证事实"
+    )
+    critic = ReactAgent(
+        settings,
+        llm,
+        ToolRegistry(),
+        store=store,
+        name="critic",
+        description="挑错补缺并改写最终答案",
+    )
+    results.append(
+        _check("research", lambda: CriticPipeline(researcher, critic).run("2 + 2 等于几？").answer)
+    )
 
     # 5. 多 Agent：team 路由
-    writer = ReactAgent(settings, llm, ToolRegistry(), store=store, name="writer",
-                        description="纯生成")
-    results.append(_check("team", lambda: Orchestrator(
-        {"researcher": researcher, "writer": writer}, llm).run(
-        [{"role": "user", "content": "帮我算 5 * 6 等于几？"}]).answer))
+    writer = ReactAgent(
+        settings, llm, ToolRegistry(), store=store, name="writer", description="纯生成"
+    )
+    results.append(
+        _check(
+            "team",
+            lambda: (
+                Orchestrator({"researcher": researcher, "writer": writer}, llm)
+                .run([{"role": "user", "content": "帮我算 5 * 6 等于几？"}])
+                .answer
+            ),
+        )
+    )
 
     store.close()
     mem_store.close()

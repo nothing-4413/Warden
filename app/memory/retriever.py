@@ -3,11 +3,11 @@
 检索增强（可选，传入 llm 后可用）：① 查询改写（检索前用 LLM 改写/扩展查询提升召回）；
 ② LLM 重排（检索后对候选片段精排，挑最相关的 top-k 提升精度）。两级管线："召回 + 精排"。
 """
+
 from __future__ import annotations
 
 from .embeddings import EmbeddingClient
 from .vector_store import Chunk, VectorStore
-
 
 _QUERY_REWRITE_PROMPT = """\
 Rewrite the user's search query into a more specific, keyword-rich retrieval query for
@@ -29,8 +29,14 @@ class Retriever:
         self.store = store
         self.llm = llm  # 可选：查询改写 + 重排需要 LLM
 
-    def retrieve(self, query: str, k: int = 4, min_score: float = 0.0,
-                 rewrite: bool = False, rerank: bool = False) -> list[Chunk]:
+    def retrieve(
+        self,
+        query: str,
+        k: int = 4,
+        min_score: float = 0.0,
+        rewrite: bool = False,
+        rerank: bool = False,
+    ) -> list[Chunk]:
         # ① 召回：可选用 LLM 改写查询后嵌入；重排时先多取一些候选（k*2）
         search_query = self._rewrite_query(query) if (rewrite and self.llm is not None) else query
         emb = self.embedder.embed([search_query])[0]
@@ -46,10 +52,12 @@ class Retriever:
     def _rewrite_query(self, query: str) -> str:
         """LLM 改写查询以提升召回；失败则原样返回，不阻塞检索。"""
         try:
-            rewritten = self.llm.chat([
-                {"role": "system", "content": _QUERY_REWRITE_PROMPT},
-                {"role": "user", "content": query},
-            ]).strip()
+            rewritten = self.llm.chat(
+                [
+                    {"role": "system", "content": _QUERY_REWRITE_PROMPT},
+                    {"role": "user", "content": query},
+                ]
+            ).strip()
             return rewritten or query
         except Exception:
             return query
@@ -58,12 +66,15 @@ class Retriever:
         """LLM 重排候选片段（按相关性从高到低）；失败则保持原相似度顺序。"""
         options = "\n\n".join(f"[{i}] {c.text}" for i, c in enumerate(chunks, start=1))
         try:
-            raw = self.llm.chat([
-                {"role": "system", "content": _RERANK_PROMPT},
-                {"role": "user", "content": f"Query: {query}\n\nCandidates:\n{options}"},
-            ])
+            raw = self.llm.chat(
+                [
+                    {"role": "system", "content": _RERANK_PROMPT},
+                    {"role": "user", "content": f"Query: {query}\n\nCandidates:\n{options}"},
+                ]
+            )
             # 延迟导入，避免 memory ↔ tools 的模块加载循环
             from ..agent.base import extract_json
+
             data = extract_json(raw)
             if not isinstance(data, dict):
                 return chunks[:k]

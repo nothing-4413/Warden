@@ -9,6 +9,7 @@
 断言的是线路上的事实，不是代码自述：两轮对话在账本里是同一个会话；重放同一轮时
 mock 上游的 /calls 计数不变、响应带 X-InferGate-Idempotent-Replay: true。
 """
+
 import os
 import uuid
 from dataclasses import replace
@@ -26,8 +27,9 @@ TENANT = os.getenv("WARDEN_GATEWAY_E2E_TENANT", "warden-e2e-pytest")
 MODEL = os.getenv("WARDEN_GATEWAY_E2E_MODEL", "mock-gpt")
 
 live = pytest.mark.skipif(not GATEWAY, reason="需要真实网关：设置 WARDEN_GATEWAY_E2E_URL")
-needs_mock = pytest.mark.skipif(not (GATEWAY and MOCK),
-                                reason="需要真实网关与 mock 上游：设置两个 E2E 环境变量")
+needs_mock = pytest.mark.skipif(
+    not (GATEWAY and MOCK), reason="需要真实网关与 mock 上游：设置两个 E2E 环境变量"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -42,17 +44,24 @@ def _no_proxy_for_loopback(monkeypatch):
 
 
 def _client() -> LLMClient:
-    settings = replace(get_settings(), llm_base_url=f"{GATEWAY}/v1",
-                       llm_api_key="mock-key", llm_model=MODEL,
-                       gateway_tenant=TENANT, gateway_session="")
+    settings = replace(
+        get_settings(),
+        llm_base_url=f"{GATEWAY}/v1",
+        llm_api_key="mock-key",
+        llm_model=MODEL,
+        gateway_tenant=TENANT,
+        gateway_session="",
+    )
     return LLMClient(settings)
 
 
 def _turn_pair(nonce: str) -> tuple[list[dict], list[dict]]:
     """一组两轮对话。首条用户消息带随机 nonce，所以每次运行的会话互不干扰。"""
     turn1 = [{"role": "user", "content": f"live-e2e {nonce} 第一轮"}]
-    turn2 = turn1 + [{"role": "assistant", "content": "（占位回复）"},
-                     {"role": "user", "content": f"live-e2e {nonce} 第二轮"}]
+    turn2 = turn1 + [
+        {"role": "assistant", "content": "（占位回复）"},
+        {"role": "user", "content": f"live-e2e {nonce} 第二轮"},
+    ]
     return turn1, turn2
 
 
@@ -74,8 +83,9 @@ def test_live_two_turns_are_one_session_in_the_ledger():
     assert client.last_gateway.replayed is False
     assert client.last_gateway.key != "", "网关请求必须带幂等键"
 
-    resp = httpx.get(f"{GATEWAY}/admin/sessions/{session_id}",
-                     params={"tenant": TENANT}, timeout=10.0)
+    resp = httpx.get(
+        f"{GATEWAY}/admin/sessions/{session_id}", params={"tenant": TENANT}, timeout=10.0
+    )
     assert resp.status_code == 200, resp.text
     sess = resp.json()
     assert sess["tenant"] == TENANT
@@ -103,8 +113,11 @@ def test_live_replay_is_served_by_the_gateway_not_the_upstream():
     assert client.last_gateway.upstream_name == "replay"
     assert _calls() == calls_after_real_work, "回放不该再打上游"
 
-    sess = httpx.get(f"{GATEWAY}/admin/sessions/{client.last_gateway.session_id}",
-                     params={"tenant": TENANT}, timeout=10.0).json()
+    sess = httpx.get(
+        f"{GATEWAY}/admin/sessions/{client.last_gateway.session_id}",
+        params={"tenant": TENANT},
+        timeout=10.0,
+    ).json()
     assert sess["requests"] == 3
     assert sess["idempotent_replays"] == 1
 

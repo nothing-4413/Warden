@@ -10,6 +10,7 @@
 失败结果同样进缓存，否则对着一个不提供该端点的网关，每次 LLM 调用都要多花一次
 无用的 HTTP 请求。
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,7 +48,7 @@ class ModelCapability:
     available: bool = True
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "ModelCapability":
+    def from_json(cls, data: dict[str, Any]) -> ModelCapability:
         """从一条 models[] 记录构造。
 
         context_window / max_output_tokens 在 InferGate 里带 omitempty，
@@ -81,8 +82,9 @@ class CapabilityCache:
         self._ttl_s = float(ttl_s)
         self._entries: dict[str, _Entry] = {}
 
-    def report(self, base_url: str, *, api_key: str = "",
-               timeout: float = 10.0) -> dict[str, Any] | None:
+    def report(
+        self, base_url: str, *, api_key: str = "", timeout: float = 10.0
+    ) -> dict[str, Any] | None:
         """取能力报告；探测失败/非 200/非 JSON 一律返回 None（并缓存该失败）。"""
         url = capabilities_url(base_url)
         now = time.monotonic()

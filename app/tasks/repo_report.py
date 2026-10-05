@@ -1,4 +1,5 @@
 """代码库维护助手：扫描 TODO/技术债 + 依赖版本 + 近期提交 → LLM 报告。"""
+
 from __future__ import annotations
 
 import re
@@ -67,7 +68,10 @@ class RepoReportTask(BaseTask):
         try:
             r = subprocess.run(
                 ["git", "log", "--oneline", f"--since={days} days ago"],
-                cwd=self._root, capture_output=True, text=True, timeout=15,
+                cwd=self._root,
+                capture_output=True,
+                text=True,
+                timeout=15,
             )
             return [ln for ln in r.stdout.splitlines() if ln.strip()]
         except Exception:  # 非 git 仓库 / git 不可用时静默降级
@@ -79,7 +83,9 @@ class RepoReportTask(BaseTask):
         commits = self._recent_commits()
         report = ctx.llm.chat(self._prompt(todos, deps, commits))
         return TaskResult(
-            self.name, "ok", report,
+            self.name,
+            "ok",
+            report,
             {"todos": len(todos), "deps": len(deps), "commits": len(commits)},
         )
 
@@ -89,8 +95,11 @@ class RepoReportTask(BaseTask):
             "按优先级列出需要处理的问题，指出可以升级的依赖，最后给出维护建议。直接输出 Markdown。"
         )
         user = (
-            "## TODO/FIXME/HACK\n" + ("\n".join(f"- `{t}`" for t in todos[:50]) or "（无）")
-            + "\n\n## 依赖\n" + ("\n".join(f"- {d}" for d in deps) or "（无）")
-            + "\n\n## 近期提交\n" + ("\n".join(f"- {c}" for c in commits[:30]) or "（无）")
+            "## TODO/FIXME/HACK\n"
+            + ("\n".join(f"- `{t}`" for t in todos[:50]) or "（无）")
+            + "\n\n## 依赖\n"
+            + ("\n".join(f"- {d}" for d in deps) or "（无）")
+            + "\n\n## 近期提交\n"
+            + ("\n".join(f"- {c}" for c in commits[:30]) or "（无）")
         )
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]

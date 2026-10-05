@@ -2,6 +2,7 @@
 
 失败率 = warden_runs_total{status="error"} / warden_runs_total（Grafana 面板与告警据此计算）。
 """
+
 from __future__ import annotations
 
 from prometheus_client import Counter, Histogram, generate_latest

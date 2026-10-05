@@ -3,6 +3,7 @@
 设计取舍：个人笔记量级（数千 chunk）用 SQLite + 暴力检索足够，零外部服务；
 接口 add/search 留作换 Milvus/pgvector 只改这一处（与 RunStore 同一思路）。
 """
+
 from __future__ import annotations
 
 import json
@@ -52,8 +53,7 @@ class VectorStore:
         scored = [(_cosine(query_embedding, json.loads(r["embedding"])), r) for r in rows]
         scored.sort(key=lambda t: t[0], reverse=True)
         return [
-            Chunk(id=r["id"], doc_id=r["doc_id"], text=r["text"], score=s)
-            for s, r in scored[:k]
+            Chunk(id=r["id"], doc_id=r["doc_id"], text=r["text"], score=s) for s, r in scored[:k]
         ]
 
     def count(self) -> int:
@@ -68,7 +68,7 @@ class VectorStore:
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
     if na == 0 or nb == 0:

@@ -17,13 +17,15 @@ run 现生成的 uuid4，天生"每次都不一样"，拿它当会话 id 只会�
 两者都只用 sha256，所以跨进程重启可复现；长度截断到 32/40 hex，
 避免把超长头塞给网关。
 """
+
 from __future__ import annotations
 
 import contextlib
 import contextvars
 import hashlib
 import json
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 # 与 InferGate internal/gateway/headers.go 中的拼写保持一致
 HEADER_SESSION = "X-InferGate-Session"
@@ -89,9 +91,7 @@ def derive_idempotency_key(*, session_id: str, messages: Any, payload: Any) -> s
     这是"没有被重复计费"的证据。
     """
     turn_index = len(messages or [])
-    return _ID_PREFIX + _digest(
-        [session_id, str(turn_index), canonical_body(payload)], 40
-    )
+    return _ID_PREFIX + _digest([session_id, str(turn_index), canonical_body(payload)], 40)
 
 
 # 会话 id 的隐式作用域：BaseAgent 在整轮 run() 里按完整历史设置一次，

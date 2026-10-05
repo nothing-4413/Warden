@@ -3,6 +3,7 @@
 关键：不用内置 eval（可执行任意代码）。改用 ast 解析 + 白名单节点，
 只允许数字、四则运算、幂、取模、整除、括号，其余节点一律拒绝。
 """
+
 from __future__ import annotations
 
 import ast

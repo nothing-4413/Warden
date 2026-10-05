@@ -1,4 +1,5 @@
 """Reflexion-lite（自反思）测试：final answer 前自我校验，必要时回补。"""
+
 from app.agent.react import ReactAgent
 from app.config import Settings
 from app.tools import build_default_registry
@@ -15,10 +16,12 @@ class FakeLLM:
 
 
 def test_reflect_ok_returns_answer():
-    llm = FakeLLM([
-        '{"thought": "t", "final_answer": "the answer"}',
-        '{"verdict": "ok", "feedback": ""}',
-    ])
+    llm = FakeLLM(
+        [
+            '{"thought": "t", "final_answer": "the answer"}',
+            '{"verdict": "ok", "feedback": ""}',
+        ]
+    )
     agent = ReactAgent(Settings(reflect_enabled=True), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "q"}])
     assert result.answer == "the answer"
@@ -26,12 +29,14 @@ def test_reflect_ok_returns_answer():
 
 
 def test_reflect_redo_refines_answer():
-    llm = FakeLLM([
-        '{"thought": "t", "final_answer": "wrong"}',
-        '{"verdict": "redo", "feedback": "include the actual number"}',
-        '{"thought": "fixed", "final_answer": "corrected"}',
-        '{"verdict": "ok", "feedback": ""}',
-    ])
+    llm = FakeLLM(
+        [
+            '{"thought": "t", "final_answer": "wrong"}',
+            '{"verdict": "redo", "feedback": "include the actual number"}',
+            '{"thought": "fixed", "final_answer": "corrected"}',
+            '{"verdict": "ok", "feedback": ""}',
+        ]
+    )
     agent = ReactAgent(Settings(reflect_enabled=True), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "q"}])
     assert result.answer == "corrected"
@@ -42,11 +47,13 @@ def test_reflect_redo_refines_answer():
 
 def test_reflect_parse_failure_passes_through():
     """反思输出解析失败：默认放行，不阻塞主循环。"""
-    llm = FakeLLM([
-        '{"thought": "t", "final_answer": "answer"}',
-        "garbage one",
-        "garbage two",
-    ])
+    llm = FakeLLM(
+        [
+            '{"thought": "t", "final_answer": "answer"}',
+            "garbage one",
+            "garbage two",
+        ]
+    )
     agent = ReactAgent(Settings(reflect_enabled=True), llm, build_default_registry())
     result = agent.run([{"role": "user", "content": "q"}])
     assert result.answer == "answer"
