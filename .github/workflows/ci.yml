@@ -36,7 +36,8 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: pip install -e ".[dev]"
-      - run: pytest -q
+      # 实网回归（live marker）不选：需要真实网关，由环境变量门控
+      - run: pytest -q -m "not live" --cov=app --cov-report=term-missing
 
   docker:
     runs-on: ubuntu-latest

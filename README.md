@@ -163,10 +163,12 @@ pip install -e ".[dev]"        # pytest + pytest-cov + ruff
 ruff format .                  # 格式化（行宽 100）
 ruff check --fix .             # lint（规则见 pyproject.toml）
 pytest -q                      # 单元测试：FakeLLM，零网络
-pytest -q --cov=app --cov-report=term-missing
+pytest -q --cov=app --cov-report=term-missing   # 覆盖率（当前基线 78%）
+pytest -q -m "not live"        # 跳过实网回归（CI 用的就是这条）
+pytest -q -m live              # 只跑实网回归（需 WARDEN_GATEWAY_E2E_URL）
 ```
 
-CI（`.github/workflows/ci.yml`）在 Python 3.11 / 3.14 上跑 ruff + pytest。`tests/test_gateway_live.py` 需要真实 gateway，未设 `WARDEN_GATEWAY_E2E_URL` 时自动跳过。
+CI（`.github/workflows/ci.yml`）跑三件事：ruff 格式与 lint（3.11）、pytest + 覆盖率（3.11 / 3.14）、`docker build` 验证镜像能构建。`tests/test_gateway_live.py` 标了 `live`，需要真实 gateway，未设 `WARDEN_GATEWAY_E2E_URL` 时跳过。
 
 > Windows：若 shell 的 `TEMP`/`TMP` 没指向系统临时目录，pytest 会把 `tmp_path` 目录建在仓库根目录，形成 `pytest-of-<用户>/`。已在 `.gitignore` 忽略（想彻底不产生，可给 pytest 加 `--basetemp=.pytest_tmp`，该目录同样已忽略）。
 

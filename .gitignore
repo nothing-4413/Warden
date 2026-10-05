@@ -17,6 +17,12 @@ reports/
 .mypy_cache/
 .ruff_cache/
 
+# 覆盖率产物
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # pytest 临时目录（shell 的 TEMP/TMP 未指向系统临时目录时，
 # basetemp 会落到仓库根目录，形成 pytest-of-<用户>/pytest-<N>/ 垃圾树）
 pytest-of-*/

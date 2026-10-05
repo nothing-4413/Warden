@@ -30,6 +30,9 @@ needs_mock = pytest.mark.skipif(
     not (GATEWAY and MOCK), reason="需要真实网关与 mock 上游：设置两个 E2E 环境变量"
 )
 
+# 整份文件都是实网回归：CI 与日常 `pytest -m "not live"` 会直接不选它
+pytestmark = pytest.mark.live
+
 
 @pytest.fixture(autouse=True)
 def _no_proxy_for_loopback(monkeypatch):
