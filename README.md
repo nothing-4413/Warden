@@ -5,6 +5,28 @@
 
 自托管、长期运行的个人多智能体系统。
 
+## 为什么做这个
+
+- **数据不出网**：个人笔记、日程、代码库周报这类东西不想托管给第三方服务。Warden 默认指向本机 Ollama，除了你自己配置的 LLM/嵌入地址，不主动访问任何外部服务。
+- **要的是「长期运行」而不是玩具 demo**：每次运行落 SQLite（`RunRecord`），崩了能 `resume` 续跑，重试幂等，指标可查。
+- **个人项目的取舍**：够用优先。控制台是一个零构建的静态 HTML，向量检索是 SQLite 暴力余弦，不引入 LangChain / 向量数据库 / 消息队列。
+
+## 架构
+
+```mermaid
+flowchart LR
+    U["CLI / HTTP API / 控制台"] --> A["Agent 循环<br/>ReAct · PlanAct · FunctionCall"]
+    A --> T["工具注册表 + MCP"]
+    A --> M["记忆 RAG<br/>embed → SQLite 向量库"]
+    A --> L["LLM<br/>Ollama / OpenAI / vLLM"]
+    A --> H["Harness<br/>run_store · retry · metrics · cost"]
+    S["APScheduler 定时任务"] --> A
+    S --> N["通知 console / file"]
+    H --> P["Prometheus / Grafana"]
+    M --> L
+    T --> X["内置工具 / 外部 MCP server"]
+```
+
 ## 特性
 
 - 自研 Agent 循环：ReAct / PlanAct / Function Calling（不依赖 LangChain）
@@ -119,6 +141,21 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat \
 - **记忆**：笔记分块 → 嵌入 → SQLite 向量库暴力余弦检索。`search_notes` 读、`save_note` 写回，长期记忆闭环；可选查询改写 + LLM 重排两级检索增强。
 - **多 Agent + MCP**：`Orchestrator` 路由到专家、`CriticPipeline` 接力（researcher → critic）、`BlackboardTeam` 共享黑板；MCP 客户端零依赖 stdio JSON-RPC，工具动态适配进注册表。
 - **监控**：`deploy/` 下 `docker compose up -d` 起 Prometheus(:9090) + Grafana(:3000)，失败率告警（5 分钟窗口 error > 20%）。
+
+## 开发
+
+```bash
+pip install -e ".[dev]"        # pytest + pytest-cov + ruff
+
+ruff format .                  # 格式化（行宽 100）
+ruff check --fix .             # lint（规则见 pyproject.toml）
+pytest -q                      # 单元测试：FakeLLM，零网络
+pytest -q --cov=app --cov-report=term-missing
+```
+
+CI（`.github/workflows/ci.yml`）在 Python 3.11 / 3.14 上跑 ruff + pytest。`tests/test_gateway_live.py` 需要真实 gateway，未设 `WARDEN_GATEWAY_E2E_URL` 时自动跳过。
+
+> Windows：若 shell 的 `TEMP`/`TMP` 没指向系统临时目录，pytest 会把 `tmp_path` 目录建在仓库根目录，形成 `pytest-of-<用户>/`。已在 `.gitignore` 忽略（想彻底不产生，可给 pytest 加 `--basetemp=.pytest_tmp`，该目录同样已忽略）。
 
 ## 路线图
 
