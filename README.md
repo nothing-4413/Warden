@@ -42,6 +42,7 @@ flowchart LR
 ```
 Warden/
 ├── pyproject.toml
+├── uv.lock                 # 依赖锁（uv lock 生成，CI 按它安装）
 ├── .env.example            # 环境变量示例（复制为 .env）
 ├── app/
 │   ├── config.py           # 配置（pydantic-settings：环境变量 / .env，带类型校验）
@@ -79,7 +80,7 @@ Warden/
 # 1. 安装（Python 3.11+）
 python -m venv .venv
 .venv\Scripts\activate            # Windows；macOS/Linux: source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev]"           # 或：uv sync --locked --extra dev
 
 # 2. 配置（默认指向本地 Ollama）
 copy .env.example .env            # 按需改 WARDEN_LLM_*
@@ -160,6 +161,11 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat \
 ```bash
 pip install -e ".[dev]"        # pytest + pytest-cov + ruff
 
+# 用 uv 时可以走锁文件（CI 就是这样装的，本地与 CI 版本一致）
+uv sync --locked --extra dev   # 按 uv.lock 装到 .venv
+uv run --no-sync pytest -q     # 后面的 python / pytest / ruff 也可加 uv run --no-sync
+uv lock                        # 改过 pyproject.toml 依赖后刷新 uv.lock
+
 ruff format .                  # 格式化（行宽 100）
 ruff check --fix .             # lint（规则见 pyproject.toml）
 pytest -q                      # 单元测试：FakeLLM，零网络
@@ -168,7 +174,7 @@ pytest -q -m "not live"        # 跳过实网回归（CI 用的就是这条）
 pytest -q -m live              # 只跑实网回归（需 WARDEN_GATEWAY_E2E_URL）
 ```
 
-CI（`.github/workflows/ci.yml`）跑三件事：ruff 格式与 lint（3.11）、pytest + 覆盖率（3.11 / 3.14）、`docker build` 验证镜像能构建。`tests/test_gateway_live.py` 标了 `live`，需要真实 gateway，未设 `WARDEN_GATEWAY_E2E_URL` 时跳过。
+CI（`.github/workflows/ci.yml`）跑三件事：ruff 格式与 lint（3.11，ruff 固定 0.16.10）、pytest + 覆盖率（3.11 / 3.14，依赖用 `uv sync --locked` 按 `uv.lock` 安装）、`docker build` 验证镜像能构建。`tests/test_gateway_live.py` 标了 `live`，需要真实 gateway，未设 `WARDEN_GATEWAY_E2E_URL` 时跳过。
 
 > Windows：若 shell 的 `TEMP`/`TMP` 没指向系统临时目录，pytest 会把 `tmp_path` 目录建在仓库根目录，形成 `pytest-of-<用户>/`。已在 `.gitignore` 忽略（想彻底不产生，可给 pytest 加 `--basetemp=.pytest_tmp`，该目录同样已忽略）。
 

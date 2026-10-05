@@ -30,14 +30,14 @@ jobs:
         python-version: ["3.11", "3.14"]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      # 依赖走 uv.lock：CI 装的就是本地锁定过的同一批版本
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - run: pip install -e ".[dev]"
+          enable-cache: true
+      - run: uv sync --locked --extra dev
       # 实网回归（live marker）不选：需要真实网关，由环境变量门控
-      - run: pytest -q -m "not live" --cov=app --cov-report=term-missing
+      - run: uv run --no-sync pytest -q -m "not live" --cov=app --cov-report=term-missing
 
   docker:
     runs-on: ubuntu-latest
