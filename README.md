@@ -7,7 +7,7 @@
 
 ![Warden 控制台](docs/console.png)
 
-控制台是零构建的静态页面：系统状态、定时任务（可手动触发）、最近运行，右上角直达 Prometheus `/metrics`。
+控制台是零构建的静态页面：系统状态、定时任务（可手动触发）、最近运行，右上角直达 Prometheus `/metrics`。截图由本机 headless Edge 对 `uvicorn app.main:app` 起的实例抓取（`--headless=new --screenshot=docs/console.png --user-data-dir=.shotprofile`，profile 目录不入库）。
 
 ## 为什么做这个
 
