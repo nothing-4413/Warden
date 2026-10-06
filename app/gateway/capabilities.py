@@ -20,6 +20,8 @@ from typing import Any
 
 import httpx
 
+from ..net import httpx_env_kwargs
+
 logger = logging.getLogger(__name__)
 
 CAPABILITIES_PATH = "capabilities"
@@ -132,7 +134,7 @@ class CapabilityCache:
     def _fetch(self, url: str, *, api_key: str, timeout: float) -> dict[str, Any] | None:
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         try:
-            resp = httpx.get(url, headers=headers, timeout=timeout)
+            resp = httpx.get(url, headers=headers, timeout=timeout, **httpx_env_kwargs(url))
         except httpx.HTTPError as exc:  # 网络层错误：不是网关，退化为"不知道"
             logger.warning("能力探测失败（%s）：%s", url, exc)
             return None

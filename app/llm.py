@@ -39,6 +39,7 @@ from .harness import (
     record_in_flight_retry,
     record_llm_usage,
 )
+from .net import httpx_env_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +248,13 @@ class LLMClient:
         for attempt in range(1, max_attempts + 1):
             attempts = attempt
             try:
-                resp = httpx.post(url, json=payload, headers=headers, timeout=self._timeout)
+                resp = httpx.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=self._timeout,
+                    **httpx_env_kwargs(url),
+                )
             except httpx.HTTPError as exc:  # 网络层错误（连接失败/超时）
                 raise LLMError(f"LLM request failed: {exc}") from exc
             kind = _gateway_error_type(resp)

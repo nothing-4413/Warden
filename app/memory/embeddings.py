@@ -8,6 +8,7 @@ from __future__ import annotations
 import httpx
 
 from ..config import Settings
+from ..net import httpx_env_kwargs
 
 
 class EmbeddingError(Exception):
@@ -21,12 +22,14 @@ class EmbeddingClient:
     def embed(self, texts: list[str]) -> list[list[float]]:
         """把一批文本嵌入成向量，返回与输入等长的向量列表。"""
         payload = {"model": self.settings.embedding_model, "input": texts}
+        url = f"{self.settings.llm_base_url}/embeddings"
         try:
             resp = httpx.post(
-                f"{self.settings.llm_base_url}/embeddings",
+                url,
                 json=payload,
                 headers={"Authorization": f"Bearer {self.settings.llm_api_key}"},
                 timeout=self.settings.llm_timeout_s,
+                **httpx_env_kwargs(url),
             )
             resp.raise_for_status()
             data = resp.json()["data"]
