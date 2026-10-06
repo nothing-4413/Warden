@@ -39,6 +39,10 @@ class WeeklyReviewTask(BaseTask):
                 cwd=self._repo,
                 capture_output=True,
                 text=True,
+                # 不指定编码时 Windows 按本地代码页（GBK）解码：含中文的提交信息会在
+                # subprocess 读取线程里抛 UnicodeDecodeError，整段 git log 被静默丢弃。
+                encoding="utf-8",
+                errors="replace",
                 timeout=15,
             )
             return [ln for ln in r.stdout.splitlines() if ln.strip()]

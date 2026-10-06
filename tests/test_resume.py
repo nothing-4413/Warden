@@ -1,11 +1,21 @@
 """断点续跑：run 崩溃后 resume 从中断处继续并正确持久化。"""
 
+import pytest
+
 from app.agent.planact import PlanActAgent
 from app.agent.react import ReactAgent
 from app.config import Settings
 from app.harness import STATUS_ERROR, STATUS_OK
 from app.harness.run_store import RunStore
 from app.tools import build_default_registry
+
+
+@pytest.fixture
+def store(tmp_path):
+    """每个用例一个库，跑完关掉（否则测试会话结束时会报未关闭连接的 ResourceWarning）。"""
+    s = RunStore(str(tmp_path / "w.db"))
+    yield s
+    s.close()
 
 
 class ScriptLLM:
@@ -30,8 +40,7 @@ def _settings() -> Settings:
     return Settings(retry_attempts=1, retry_backoff_s=0)
 
 
-def test_react_resume_after_tool_step(tmp_path):
-    store = RunStore(str(tmp_path / "w.db"))
+def test_react_resume_after_tool_step(store):
     tools = build_default_registry()
     s = _settings()
 
@@ -64,8 +73,7 @@ def test_react_resume_after_tool_step(tmp_path):
     assert store.get(run_id).status == STATUS_OK
 
 
-def test_planact_resume_skips_done_steps(tmp_path):
-    store = RunStore(str(tmp_path / "w.db"))
+def test_planact_resume_skips_done_steps(store):
     tools = build_default_registry()
     s = _settings()
 
@@ -97,8 +105,7 @@ def test_planact_resume_skips_done_steps(tmp_path):
     assert store.get(run_id).status == STATUS_OK
 
 
-def test_react_run_persists_ok(tmp_path):
-    store = RunStore(str(tmp_path / "w.db"))
+def test_react_run_persists_ok(store):
     llm = ScriptLLM(['{"thought": "d", "final_answer": "hi"}'])
     agent = ReactAgent(_settings(), llm, build_default_registry(), store=store)
     result = agent.run([{"role": "user", "content": "hi"}])

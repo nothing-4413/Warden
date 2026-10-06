@@ -13,10 +13,18 @@
 
 - `extract_json()`：模型在一轮里连吐多个 JSON（例如先 `action` 再 `final_answer`）时，改为取**第一个完整对象**。旧实现把整段拼起来解析，解析失败后原始 JSON 文本被当成最终答案，**工具因此从不被执行**——本机 1.5B 模型实测正是这种输出，修复前 `tools` 完全走不到。
 - 本机目标不再被系统代理劫持：新增 `app/net.py`，LLM / 嵌入 / 能力探测三条出站请求在目标是 `localhost`/回环 IP 时关掉环境代理（`trust_env=False`），指外网时行为不变。修复前 Windows 上开着系统代理（实测注册表 `127.0.0.1:7897`）连本机 Ollama 都会返回 502 空 body，且 Ollama 侧看不到请求。
+- `git log` 输出在 Windows 上被按本地代码页（GBK）解码：含中文的提交信息会在读取线程里抛 `UnicodeDecodeError`，`repo_report` / `weekly_review` 的「近期提交」段落被静默丢掉。两处 `subprocess.run` 显式 `encoding="utf-8", errors="replace"`。
+- 未关闭的 sqlite 句柄：CLI 的「未知任务」早退路径与 `chat` / `index-notes` / `search` 的异常路径漏掉 `store.close()`（改用 `finally`）；`MCPClient.close()` 只关 stdin，stdout 的 `TextIOWrapper` 留到解释器退出；`scripts/eval_router.py` 透传上游 4xx/5xx 时没有关闭 `HTTPError` 自带的 body 流。三处都不影响功能，但会让长驻进程/测试会话出现 `ResourceWarning`。
 
 ### 测试
 
 - `tests/test_net.py`（17 个用例）：回环判定真值表、三条出站请求的代理开关、嵌入按 `index` 纠正乱序、网络/形状错误包装。
+- `tests/test_cli.py`（18 个）：11 个 CLI 子命令的接线、退出码、打印内容（`app/cli.py` 覆盖率 0% → 95%）。
+- `tests/test_scheduler.py`、`tests/test_notify.py`、`tests/test_mcp_registry.py`、`tests/test_weekly_review.py`：触发器构造、重试与落库、通知器选择与文件名、MCP 工具前缀注册、近 7 天笔记/提交收集与提示词组装。
+- `tests/test_llm_client.py`：`chat_with_tools` 解析（含缺 id、参数不是 JSON 的容错）与坏形状/网络错误包装。
+- `tests/test_api.py`：健康检查、`/metrics`（含禁用时 404）、控制台运行记录、`/api/v1/chat`（步骤映射 + 幂等回放不打模型）、任务列表/触发/404、lifespan 启停调度器。
+- `tests/test_resume.py` 改用 fixture 持有 `RunStore`，跑完关闭连接。
+- 全量：**206 passed / 3 skipped（live）**，覆盖率基线 79% → **95%**。
 
 ### 文档
 

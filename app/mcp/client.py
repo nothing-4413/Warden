@@ -88,10 +88,14 @@ class MCPClient:
         return text
 
     def close(self) -> None:
-        try:
-            self._proc.stdin.close()
-        except OSError:
-            pass
+        # stdin + stdout 都要关：只关 stdin 会让 stdout 的 TextIOWrapper 留到解释器
+        # 退出时才被回收，测试/长驻进程里表现为 ResourceWarning: unclosed file。
+        for pipe in (self._proc.stdin, self._proc.stdout):
+            if pipe is not None:
+                try:
+                    pipe.close()
+                except OSError:
+                    pass
         self._proc.terminate()
         try:
             self._proc.wait(timeout=5)

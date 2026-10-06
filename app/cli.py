@@ -65,17 +65,19 @@ def _chat(query: str, agent_name: str) -> None:
     ]
     agent = agent_cls(settings, llm, registry, store=store)
 
-    result = agent.run([{"role": "user", "content": query}])
-    print(f"[{result.agent}|{result.model}] {result.answer}")
-    if result.self_eval:
-        conf = result.self_eval.get("confidence", "?")
-        reason = result.self_eval.get("reason", "")
-        print(f"  [self-eval] confidence={conf}  {reason}")
-    for s in result.steps:
-        label = s.action or "(answer)"
-        print(f"  step {s.index}: {s.thought or ''} -> {label} -> {s.observation}")
-    store.close()
-    mem_store.close()
+    try:
+        result = agent.run([{"role": "user", "content": query}])
+        print(f"[{result.agent}|{result.model}] {result.answer}")
+        if result.self_eval:
+            conf = result.self_eval.get("confidence", "?")
+            reason = result.self_eval.get("reason", "")
+            print(f"  [self-eval] confidence={conf}  {reason}")
+        for s in result.steps:
+            label = s.action or "(answer)"
+            print(f"  step {s.index}: {s.thought or ''} -> {label} -> {s.observation}")
+    finally:  # 跑挂也要把连接关掉，否则 CLI 退出前会漏 sqlite 句柄
+        store.close()
+        mem_store.close()
 
 
 def _list_tasks() -> None:
@@ -97,8 +99,9 @@ def _run_task(name: str) -> int:
     except TaskNotFoundError as exc:
         print(f"错误：{exc}")
         return 1
+    finally:  # 「未知任务」这条早退路径原来会漏掉 store.close()，留下一个 sqlite 句柄
+        store.close()
     print(f"[{result.task}] {result.status}: {result.summary}")
-    store.close()
     return 0 if result.status != "error" else 1
 
 
@@ -108,9 +111,11 @@ def _index_notes() -> int:
         print("未设置 WARDEN_NOTES_DIR，无法索引笔记（在 .env 里配置后重试）。")
         return 1
     embedder, store, _retriever, indexer = _build_memory(settings)
-    n = indexer.index_dir(settings.notes_dir)
-    print(f"已索引 {n} 个 chunk 到 {settings.memory_db_path}")
-    store.close()
+    try:
+        n = indexer.index_dir(settings.notes_dir)
+        print(f"已索引 {n} 个 chunk 到 {settings.memory_db_path}")
+    finally:
+        store.close()
     return 0
 
 
@@ -118,17 +123,19 @@ def _search_notes(query: str) -> None:
     settings = get_settings()
     llm = LLMClient(settings)
     _embedder, store, retriever, _indexer = _build_memory(settings, llm=llm)
-    chunks = retriever.retrieve(
-        query,
-        k=settings.retrieval_top_k,
-        rewrite=settings.rag_rewrite_enabled,
-        rerank=settings.rag_rerank_enabled,
-    )
-    if not chunks:
-        print("没有在个人笔记里找到相关内容。")
-    for c in chunks:
-        print(f"[{c.doc_id}] (score={c.score:.2f})\n{c.text}\n")
-    store.close()
+    try:
+        chunks = retriever.retrieve(
+            query,
+            k=settings.retrieval_top_k,
+            rewrite=settings.rag_rewrite_enabled,
+            rerank=settings.rag_rerank_enabled,
+        )
+        if not chunks:
+            print("没有在个人笔记里找到相关内容。")
+        for c in chunks:
+            print(f"[{c.doc_id}] (score={c.score:.2f})\n{c.text}\n")
+    finally:
+        store.close()
 
 
 def _mcp_list() -> int:

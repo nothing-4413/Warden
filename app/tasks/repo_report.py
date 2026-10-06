@@ -71,6 +71,10 @@ class RepoReportTask(BaseTask):
                 cwd=self._root,
                 capture_output=True,
                 text=True,
+                # 见 weekly_review 同名方法：不写编码时 Windows 用本地代码页解码，
+                # 中文提交信息会让整段输出在读取线程里丢掉。
+                encoding="utf-8",
+                errors="replace",
                 timeout=15,
             )
             return [ln for ln in r.stdout.splitlines() if ln.strip()]

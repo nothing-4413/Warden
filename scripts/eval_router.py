@@ -67,8 +67,14 @@ def make_handler(chat_url: str, embed_url: str) -> type[http.server.BaseHTTPRequ
                 with _OPENER.open(req, timeout=_TIMEOUT_S) as resp:
                     self._reply(resp.status, resp.read(), dict(resp.headers))
             except urllib.error.HTTPError as exc:
-                # 上游的 4xx/5xx 原样返回，别把客户端的判断吞掉
-                self._reply(exc.code, exc.read())
+                # 上游的 4xx/5xx 原样返回，别把客户端的判断吞掉。
+                # HTTPError 自带一个要关闭的 body 流，不关会在解释器退出前
+                # 触发 ResourceWarning（Implicitly cleaning up ...）。
+                try:
+                    payload = exc.read()
+                finally:
+                    exc.close()
+                self._reply(exc.code, payload)
             except Exception as exc:
                 payload = f'{{"error": "router: {type(exc).__name__}: {exc}"}}'.encode()
                 self._reply(502, payload)

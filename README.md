@@ -179,7 +179,7 @@ uv lock                        # 改过 pyproject.toml 依赖后刷新 uv.lock
 ruff format .                  # 格式化（行宽 100）
 ruff check --fix .             # lint（规则见 pyproject.toml）
 pytest -q                      # 单元测试：FakeLLM，零网络
-pytest -q --cov=app --cov-report=term-missing   # 覆盖率（当前基线 79%）
+pytest -q --cov=app --cov-report=term-missing   # 覆盖率（当前基线 95%）
 pytest -q -m "not live"        # 跳过实网回归（CI 用的就是这条）
 pytest -q -m live              # 只跑实网回归（需 WARDEN_GATEWAY_E2E_URL）
 ```
