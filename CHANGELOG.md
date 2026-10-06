@@ -7,6 +7,8 @@
 ### 新增
 
 - 评测脚本：`scripts/eval_resume.py`（`os._exit` 跨进程硬崩 + `resume` 续跑，统计恢复成功率、重复步骤、崩溃点已落库步数）、`scripts/eval_retrieval.py`（自建中文标注语料，统计 Hit@1/@3/@k 与 MRR，`--compare` 对照「纯向量」与「查询改写 + LLM 重排」）。
+- `eval_retrieval.py --sweep 1,3,4,8`：检索一次、从同一份排序里数出 Hit@K 曲线（各点之间可比，也省掉 K 倍嵌入开销）。本机实测 Hit@1 42.5% / Hit@3 55.0% / Hit@4 65.0% / Hit@8 85.0%，MRR 0.538（k=8）。
+- `eval_resume.py` 增加第三种任务形态（时间工具 + 计算器两步链条），崩溃点从「仅第一步之后」扩到「链条中间」，用来覆盖更深一层的半成品状态。本机实测 30/30 = 100%（0 次剔除），`answer` 全部正确、无重复步骤。
 - `scripts/eval_router.py`：把 chat / embeddings 两个本地实例拼成一个 OpenAI 兼容 base_url（Warden 的 `LLMClient` 与 `EmbeddingClient` 共用 `llm_base_url`）。纯标准库，用 Ollama 时不需要。
 
 ### 修复
@@ -24,11 +26,13 @@
 - `tests/test_llm_client.py`：`chat_with_tools` 解析（含缺 id、参数不是 JSON 的容错）与坏形状/网络错误包装。
 - `tests/test_api.py`：健康检查、`/metrics`（含禁用时 404）、控制台运行记录、`/api/v1/chat`（步骤映射 + 幂等回放不打模型）、任务列表/触发/404、lifespan 启停调度器。
 - `tests/test_resume.py` 改用 fixture 持有 `RunStore`，跑完关闭连接。
-- 全量：**206 passed / 3 skipped（live）**，覆盖率基线 79% → **95%**。
+- `tests/test_eval_retrieval.py`：Hit@K 曲线的口径（同一份排序、未召回不计入任何截断点、截断点越大命中率单调不降）。
+- 全量：**209 passed / 3 skipped（live）**，覆盖率基线 79% → **95%**。
 
 ### 文档
 
 - README 新增「评测」小节：前置条件（Ollama 或 llama.cpp + 路由器）、三个脚本的运行命令、本机实测结果表；目录结构补 `scripts/`。
+- README 新增「网关实网回归」小节：在本机 InferGate 最小栈（`agent-local.yaml`）上跑通 3 个 `live` 用例的步骤与线路事实（同一会话、重放不打上游、capabilities 带回上下文窗口）。
 - README 路线图补 M6（InferGate 网关协同）与两个评测脚本的入口。
 
 ## [0.2.0] - 2026-10-06

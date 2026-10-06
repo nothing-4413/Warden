@@ -41,9 +41,14 @@ from app.tools import build_default_registry  # noqa: E402
 TASKS: dict[str, tuple[str, str]] = {
     "a": ("用计算器算 3 * 4，只回答数字。", "12"),
     "b": ("先用计算器算 12 * 12，再把上一步的结果加上 100，最后只回答数字。", "244"),
+    "c": (
+        "先用 get_current_time 查一次当前时间，再用计算器算 9 * 9，最后只回答那个乘法结果。",
+        "81",
+    ),
 }
 # 崩溃点 = 「已落库的 Observation 条数达到 N 时，在下一次 LLM 调用前杀掉进程」
-CRASH_POINTS: dict[str, list[int]] = {"a": [1], "b": [1]}
+# 同一任务给多个点，是为了覆盖「崩在第 1 步之后」与「崩在链条中间」两种半成品状态。
+CRASH_POINTS: dict[str, list[int]] = {"a": [1], "b": [1, 2], "c": [1, 2]}
 CRASH_EXIT = 70
 MARKER = "EVAL_RESULT "
 

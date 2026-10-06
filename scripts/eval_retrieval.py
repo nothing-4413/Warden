@@ -247,6 +247,7 @@ def evaluate(
     rr = 0.0
     misses: list[dict] = []
     latencies: list[float] = []
+    ranks: list[int] = []
     for query, want in QUERIES:
         started = time.perf_counter()
         chunks = retriever.retrieve(
@@ -255,6 +256,7 @@ def evaluate(
         latencies.append((time.perf_counter() - started) * 1000)
         found = [c.doc_id for c in chunks]
         rank = found.index(want) + 1 if want in found else 0
+        ranks.append(rank)
         if rank == 1:
             hits[1] += 1
         if 0 < rank <= 3:
@@ -277,8 +279,24 @@ def evaluate(
         "mrr": rr / n,
         "latency_p50_ms": latencies[n // 2],
         "latency_p95_ms": latencies[min(n - 1, int(n * 0.95))],
+        "ranks": ranks,
         "misses": misses,
     }
+
+
+def hit_at(ranks: list[int], cutoff: int) -> float:
+    """同一份排序下的 Hit@cutoff（rank 0 = 未召回）。"""
+    if not ranks:
+        return 0.0
+    return sum(1 for r in ranks if 0 < r <= cutoff) / len(ranks)
+
+
+def hit_curve(ranks: list[int], cutoffs: list[int]) -> dict[str, float]:
+    """Hit@K 曲线：检索一次 k=max(cutoffs)，各截断点从同一份排序里数出来。
+
+    这样各点之间可比（没有重新检索带来的噪声），也省掉 K 倍嵌入开销。
+    """
+    return {str(c): hit_at(ranks, c) for c in cutoffs}
 
 
 def show(label: str, result: dict) -> None:
@@ -295,10 +313,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Warden 检索评测（Hit@K / MRR）")
     parser.add_argument("--db", default="data/eval_retrieval.db", help="评测用向量库路径")
     parser.add_argument("--k", type=int, default=4, help="检索条数（默认 4）")
+    parser.add_argument(
+        "--sweep",
+        default="",
+        help="Hit@K 曲线，逗号分隔截断点（如 1,3,4,8）；纯向量那组按最大截断点检索一次",
+    )
     parser.add_argument("--compare", action="store_true", help="额外跑查询改写 + LLM 重排")
     parser.add_argument("--verbose", action="store_true", help="打印每条未命中")
     parser.add_argument("--out", default="", help="把结果写成 JSON")
     args = parser.parse_args()
+    cutoffs = [int(x) for x in args.sweep.split(",") if x.strip()]
+    eval_k = max([args.k, *cutoffs]) if cutoffs else args.k
 
     settings = Settings()
     if not settings.llm_base_url:
@@ -306,14 +331,22 @@ def main() -> int:
         return 2
     print(f"端点 {settings.llm_base_url} 嵌入模型 {settings.embedding_model} 语料 {len(CORPUS)} 篇")
     _, retriever, store = build(settings, Path(args.db))
-    print(f"已索引 {store.count()} 块，查询 {len(QUERIES)} 条（k={args.k}）")
+    print(f"已索引 {store.count()} 块，查询 {len(QUERIES)} 条（k={eval_k}）")
 
     report: dict = {"endpoint": settings.llm_base_url, "embedding_model": settings.embedding_model}
     plain = evaluate(
-        retriever, settings, k=args.k, rewrite=False, rerank=False, verbose=args.verbose
+        retriever, settings, k=eval_k, rewrite=False, rerank=False, verbose=args.verbose
     )
     report["vector_only"] = plain
     show("纯向量检索      ", plain)
+    if cutoffs:
+        curve = hit_curve(plain["ranks"], cutoffs)
+        report["k_sweep"] = curve
+        print(
+            "Hit@K 曲线      : "
+            + " ".join(f"Hit@{c}={curve[str(c)]:.1%}" for c in cutoffs)
+            + f"（同一份排序，k={eval_k}）"
+        )
 
     if args.compare:
         enhanced = evaluate(
@@ -321,9 +354,10 @@ def main() -> int:
         )
         report["rewrite_rerank"] = enhanced
         show("改写 + 重排     ", enhanced)
+        plain_at_k = hit_at(plain["ranks"], args.k)
         print(
             f"差值：Hit@1 {enhanced['hit@1'] - plain['hit@1']:+.1%}，"
-            f"Hit@{args.k} {enhanced[f'hit@{args.k}'] - plain[f'hit@{args.k}']:+.1%}，"
+            f"Hit@{args.k} {enhanced[f'hit@{args.k}'] - plain_at_k:+.1%}，"
             f"MRR {enhanced['mrr'] - plain['mrr']:+.3f}"
         )
 

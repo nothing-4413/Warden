@@ -203,10 +203,10 @@ CI（`.github/workflows/ci.yml`）跑三件事：ruff 格式与 lint（3.11，ru
 #       python -m scripts.eval_router --port 11434 --chat http://127.0.0.1:11500 --embed http://127.0.0.1:11501
 
 # 崩溃恢复：os._exit 硬崩后另起进程 resume，统计成功率与是否重复执行
-python -m scripts.eval_resume --trials 24 --out data/eval/resume.json
+python -m scripts.eval_resume --trials 30 --tasks a,b,c --out data/eval/resume.json
 
 # 检索：自建中文标注语料（20 篇 × 40 条释义化查询），Hit@1/@3/@k + MRR
-python -m scripts.eval_retrieval --k 4 --out data/eval/retrieval-vector.json
+python -m scripts.eval_retrieval --k 4 --sweep 1,3,4,8 --out data/eval/retrieval-vector.json
 python -m scripts.eval_retrieval --k 4 --compare --out data/eval/retrieval-compare.json
 ```
 
@@ -214,11 +214,30 @@ python -m scripts.eval_retrieval --k 4 --compare --out data/eval/retrieval-compa
 
 | 项 | 结果 |
 | --- | --- |
-| 崩溃恢复 | **24/24 = 100%**：每一步工具观测已落库后硬崩，另起进程 `resume()` 全部跑完，`answer` 正确且无重复步骤 |
-| 检索（默认：纯向量） | Hit@1 42.5% / Hit@3 55.0% / Hit@4 65.0% / MRR 0.508（Top-4 随机基线 20%） |
+| 崩溃恢复 | **30/30 = 100%**（0 次被剔除）：3 种任务形态（单步计算、两步算术链、时间工具 + 计算器链）× 2 个崩溃深度（第一步落库后 / 链条中间），每次都在「已有一整步工具观测落库」时 `os._exit` 硬崩，另起进程 `resume()` 全部跑完，`answer` 正确且无重复步骤 |
+| 检索（默认：纯向量） | Hit@1 42.5% / Hit@3 55.0% / Hit@4 65.0% / Hit@8 85.0%，MRR 0.538（k=8；k=4 时 0.508。Top-4 随机基线 20%） |
 | 检索（改写 + 重排） | Hit@1 10.0% / Hit@4 60.0% / MRR 0.329 —— **本机小模型下是负收益**，所以这两项默认关闭（`WARDEN_RAG_REWRITE_ENABLED` / `WARDEN_RAG_RERANK_ENABLED`） |
 
 延迟没有写进表里：它主要由本机 CPU 推理和转发开销决定，换台机器就变，不代表模型能力。
+
+另有一个端到端冒烟脚本 `python -m scripts.smoke`：用真实模型依次跑 react / planact / function_call 三种循环、research（researcher → critic 接力）与 team 路由，任一环失败退出码非 0。本机实测 `ALL PASS`（react `12`、planact `3.0`、function_call `59`、research 与 team 都有非空答案）。
+
+### 网关实网回归（可选）
+
+`tests/test_gateway_live.py` 的 3 个用例打真实网关，默认整体跳过。本机用 InferGate 自带的最小栈验证过（`configs/agent-local.yaml`：网关 + 仓库内 mock 上游，幂等表与会话账本都在内存里）：
+
+```bash
+# InferGate 侧
+bin/mockupstream.exe -listen 127.0.0.1:19910 -name mock
+bin/infergate.exe -config configs/agent-local.yaml      # 网关监听 127.0.0.1:18909
+
+# Warden 侧
+export WARDEN_GATEWAY_E2E_URL=http://127.0.0.1:18909
+export WARDEN_GATEWAY_E2E_MOCK=http://127.0.0.1:19910
+python -m pytest tests/test_gateway_live.py -m live -q   # 3 passed
+```
+
+实测到的线路事实：两轮对话在账本里是同一条会话（`warden-<32 hex>`，等于对首条用户消息的确定性派生）；同一轮重发命中的是网关回放（`X-InferGate-Idempotent-Replay: true`、`upstream_name=replay`、28ms），mock 上游 `/calls` 计数不动（6 → 6）；`/v1/capabilities` 取回 `context_window=128000`、`max_output_tokens=4096`；账本 `requests=3 / ok=3 / failed=0 / idempotent_replays=1`。
 
 ## 路线图
 
