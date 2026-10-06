@@ -7,6 +7,7 @@
 ### 新增
 
 - 评测脚本：`scripts/eval_resume.py`（`os._exit` 跨进程硬崩 + `resume` 续跑，统计恢复成功率、重复步骤、崩溃点已落库步数）、`scripts/eval_retrieval.py`（自建中文标注语料，统计 Hit@1/@3/@k 与 MRR，`--compare` 对照「纯向量」与「查询改写 + LLM 重排」）。
+- `scripts/eval_router.py`：把 chat / embeddings 两个本地实例拼成一个 OpenAI 兼容 base_url（Warden 的 `LLMClient` 与 `EmbeddingClient` 共用 `llm_base_url`）。纯标准库，用 Ollama 时不需要。
 
 ### 修复
 
@@ -19,6 +20,7 @@
 
 ### 文档
 
+- README 新增「评测」小节：前置条件（Ollama 或 llama.cpp + 路由器）、三个脚本的运行命令、本机实测结果表；目录结构补 `scripts/`。
 - README 路线图补 M6（InferGate 网关协同）与两个评测脚本的入口。
 
 ## [0.2.0] - 2026-10-06

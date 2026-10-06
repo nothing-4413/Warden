@@ -59,7 +59,7 @@ Warden/
 │   │   ├── base.py         #   BaseAgent + 运行结果 + JSON 解析
 │   │   ├── react.py        #   ReAct
 │   │   ├── planact.py      #   PlanAct（Plan → Act → Summarize）
-│   │   ├── function_call.py#   原生 Function Calling
+│   │   ├── function_call.py #  原生 Function Calling
 │   │   ├── orchestrator.py #   路由编排
 │   │   ├── pipeline.py     #   接力（researcher → critic）
 │   │   └── blackboard.py   #   共享黑板
@@ -75,6 +75,11 @@ Warden/
 │   └── tasks/              # news_digest / repo_report / weekly_review
 ├── Dockerfile              # 应用镜像（可选）
 ├── docs/console.png        # 控制台截图（README 用）
+├── scripts/                # 冒烟与评测脚本（纯标准库，可独立运行）
+│   ├── smoke.py            #   真实 LLM 端到端冒烟
+│   ├── eval_resume.py      #   崩溃恢复评测（跨进程 os._exit 注入）
+│   ├── eval_retrieval.py   #   检索 Hit@K / MRR 评测
+│   └── eval_router.py      #   把 chat / embeddings 两个本地实例拼成一个 base_url
 ├── deploy/                 # docker compose：应用 + Prometheus + Grafana
 └── tests/                  # 单元测试（FakeLLM，零网络）
 ```
@@ -174,7 +179,7 @@ uv lock                        # 改过 pyproject.toml 依赖后刷新 uv.lock
 ruff format .                  # 格式化（行宽 100）
 ruff check --fix .             # lint（规则见 pyproject.toml）
 pytest -q                      # 单元测试：FakeLLM，零网络
-pytest -q --cov=app --cov-report=term-missing   # 覆盖率（当前基线 78%）
+pytest -q --cov=app --cov-report=term-missing   # 覆盖率（当前基线 79%）
 pytest -q -m "not live"        # 跳过实网回归（CI 用的就是这条）
 pytest -q -m live              # 只跑实网回归（需 WARDEN_GATEWAY_E2E_URL）
 ```
@@ -184,6 +189,36 @@ CI（`.github/workflows/ci.yml`）跑三件事：ruff 格式与 lint（3.11，ru
 > Windows：若 shell 的 `TEMP`/`TMP` 没指向系统临时目录，pytest 会把 `tmp_path` 目录建在仓库根目录，形成 `pytest-of-<用户>/`。已在 `.gitignore` 忽略（想彻底不产生，可给 pytest 加 `--basetemp=.pytest_tmp`，该目录同样已忽略）。
 >
 > Windows 上开了系统代理时：`httpx` 默认读注册表里的代理设置，连 `127.0.0.1` 的 Ollama 也会走代理（实测返回 502 且 body 为空，Ollama 侧看不到请求）。**Warden 自己已经处理**：`app/net.py` 判断目标是本机时对该次请求关掉环境代理（`trust_env=False`），指外网时仍沿用系统代理。第三方工具（curl、其它 SDK）不在此列，跑它们时可以设 `NO_PROXY=127.0.0.1,localhost`（清空 `HTTP_PROXY` 无效）。
+
+## 评测
+
+两个评测脚本都跑真实模型（不在 CI 里），产物写在 `data/eval/*.json`（`data/` 已忽略）。
+
+```bash
+# 前置：一个同时提供 /chat/completions 与 /embeddings 的 OpenAI 兼容端点
+#   · 用 Ollama 最省事：ollama pull qwen2.5:7b nomic-embed-text，端点就是 http://127.0.0.1:11434/v1
+#   · 用 llama.cpp 分两个进程跑时，用路由器把两者拼到一个端口：
+#       llama-server -m <chat.gguf>  --port 11500 --alias qwen2.5-1.5b-instruct
+#       llama-server -m <embed.gguf> --port 11501 --embeddings --pooling mean
+#       python -m scripts.eval_router --port 11434 --chat http://127.0.0.1:11500 --embed http://127.0.0.1:11501
+
+# 崩溃恢复：os._exit 硬崩后另起进程 resume，统计成功率与是否重复执行
+python -m scripts.eval_resume --trials 24 --out data/eval/resume.json
+
+# 检索：自建中文标注语料（20 篇 × 40 条释义化查询），Hit@1/@3/@k + MRR
+python -m scripts.eval_retrieval --k 4 --out data/eval/retrieval-vector.json
+python -m scripts.eval_retrieval --k 4 --compare --out data/eval/retrieval-compare.json
+```
+
+本机实测（CPU，qwen2.5-1.5b-instruct + nomic-embed-text-v1.5）：
+
+| 项 | 结果 |
+| --- | --- |
+| 崩溃恢复 | **24/24 = 100%**：每一步工具观测已落库后硬崩，另起进程 `resume()` 全部跑完，`answer` 正确且无重复步骤 |
+| 检索（默认：纯向量） | Hit@1 42.5% / Hit@3 55.0% / Hit@4 65.0% / MRR 0.508（Top-4 随机基线 20%） |
+| 检索（改写 + 重排） | Hit@1 10.0% / Hit@4 60.0% / MRR 0.329 —— **本机小模型下是负收益**，所以这两项默认关闭（`WARDEN_RAG_REWRITE_ENABLED` / `WARDEN_RAG_RERANK_ENABLED`） |
+
+延迟没有写进表里：它主要由本机 CPU 推理和转发开销决定，换台机器就变，不代表模型能力。
 
 ## 路线图
 
