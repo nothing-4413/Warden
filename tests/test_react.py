@@ -118,3 +118,45 @@ def test_react_system_prompt_includes_fewshot_example():
     assert "12 * 34" in prompt
     assert '"action": "calculator"' in prompt
     assert "final_answer" in prompt
+
+
+def test_extract_json_takes_first_object_when_model_emits_two():
+    """小模型一轮吐两个对象（action + final_answer）时，取第一个，工具才会被调用。"""
+    from app.agent.base import extract_json
+
+    raw = (
+        '{"thought": "算一下", "action": "calculator", "action_input": {"expression": "3 * 4"}}\n'
+        '{"thought": "算完了", "final_answer": "12"}'
+    )
+    parsed = extract_json(raw)
+    assert parsed["action"] == "calculator"
+    assert parsed["action_input"] == {"expression": "3 * 4"}
+    assert "final_answer" not in parsed
+
+
+def test_react_executes_tool_when_two_objects_in_one_turn():
+    """一轮里先 action 再 final_answer：仍要先跑工具，再走下一轮。"""
+    llm = FakeLLM(
+        [
+            '{"thought": "算一下", "action": "calculator", "action_input": {"expression": "3 * 4"}}'
+            '\n{"thought": "已经知道答案了", "final_answer": "12"}',
+            '{"thought": "拿到观测", "final_answer": "12"}',
+        ]
+    )
+    agent = ReactAgent(Settings(), llm, build_default_registry())
+    result = agent.run([{"role": "user", "content": "用计算器算 3 * 4，只回答数字。"}])
+
+    assert result.steps[0].action == "calculator"
+    assert result.steps[0].observation == 12
+    assert result.answer == "12"
+    assert len(result.steps) == 2
+
+
+def test_extract_json_still_rejects_pure_garbage():
+    """真没有 JSON 时依旧抛错，让上层走自纠 / 原文兜底。"""
+    import pytest
+
+    from app.agent.base import extract_json
+
+    with pytest.raises(ValueError):
+        extract_json("抱歉，我无法输出 JSON")

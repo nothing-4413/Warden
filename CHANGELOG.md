@@ -2,6 +2,20 @@
 
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [未发布]
+
+### 新增
+
+- 评测脚本：`scripts/eval_resume.py`（`os._exit` 跨进程硬崩 + `resume` 续跑，统计恢复成功率、重复步骤、崩溃点已落库步数）、`scripts/eval_retrieval.py`（自建中文标注语料，统计 Hit@1/@3/@k 与 MRR，`--compare` 对照「纯向量」与「查询改写 + LLM 重排」）。
+
+### 修复
+
+- `extract_json()`：模型在一轮里连吐多个 JSON（例如先 `action` 再 `final_answer`）时，改为取**第一个完整对象**。旧实现把整段拼起来解析，解析失败后原始 JSON 文本被当成最终答案，**工具因此从不被执行**——本机 1.5B 模型实测正是这种输出，修复前 `tools` 完全走不到。
+
+### 文档
+
+- README 路线图补 M6（InferGate 网关协同）与两个评测脚本的入口。
+
 ## [0.2.0] - 2026-10-06
 
 把「一堆能跑的脚本」整理成可交付的个人项目：许可证、CI、Docker、类型化配置、锁定依赖。

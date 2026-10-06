@@ -6,6 +6,7 @@ import json
 import re
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -48,8 +49,28 @@ class AgentRunResult:
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 
+def _iter_json_objects(text: str) -> Iterator[dict[str, Any]]:
+    """按出现顺序产出文本里的每个完整 JSON 对象。"""
+    decoder = json.JSONDecoder()
+    index = text.find("{")
+    while index != -1:
+        try:
+            obj, end = decoder.raw_decode(text, index)
+        except json.JSONDecodeError:
+            index = text.find("{", index + 1)
+            continue
+        if isinstance(obj, dict):
+            yield obj
+        index = text.find("{", max(end, index + 1))
+
+
 def extract_json(text: str) -> dict[str, Any]:
-    """从模型输出里鲁棒地取出 JSON 对象。容忍代码围栏与前后噪声。"""
+    """从模型输出里鲁棒地取出 JSON 对象。容忍代码围栏与前后噪声。
+
+    小模型经常在一轮里连吐多个 JSON（例如先 ``action`` 再 ``final_answer``），
+    这时取**第一个完整对象**，而不是把整段拼起来解析失败——后者会让工具永远
+    不被执行、最终答案退化成一段原始 JSON 文本。
+    """
     text = text.strip()
     m = _FENCE_RE.search(text)
     if m:
@@ -58,13 +79,9 @@ def extract_json(text: str) -> dict[str, Any]:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # 退而求其次：取第一个 { 到最后一个 } 之间
-    start, end = text.find("{"), text.rfind("}")
-    if start != -1 and end > start:
-        try:
-            return json.loads(text[start : end + 1])
-        except json.JSONDecodeError:
-            pass
+    # 退而求其次：按顺序找第一个能独立解析出来的对象
+    for obj in _iter_json_objects(text):
+        return obj
     raise ValueError(f"could not parse JSON from model output: {text[:300]!r}")
 
 

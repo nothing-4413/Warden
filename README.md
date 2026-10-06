@@ -182,6 +182,8 @@ pytest -q -m live              # 只跑实网回归（需 WARDEN_GATEWAY_E2E_URL
 CI（`.github/workflows/ci.yml`）跑三件事：ruff 格式与 lint（3.11，ruff 固定 0.16.10）、pytest + 覆盖率（3.11 / 3.14，依赖用 `uv sync --locked` 按 `uv.lock` 安装）、`docker build` 验证镜像能构建。`tests/test_gateway_live.py` 标了 `live`，需要真实 gateway，未设 `WARDEN_GATEWAY_E2E_URL` 时跳过。
 
 > Windows：若 shell 的 `TEMP`/`TMP` 没指向系统临时目录，pytest 会把 `tmp_path` 目录建在仓库根目录，形成 `pytest-of-<用户>/`。已在 `.gitignore` 忽略（想彻底不产生，可给 pytest 加 `--basetemp=.pytest_tmp`，该目录同样已忽略）。
+>
+> Windows 上开了系统代理时：`httpx` 会读注册表里的代理设置，连 `127.0.0.1` 的 Ollama 也会走代理（实测返回 502，且 Ollama 侧看不到请求）。跑之前设 `NO_PROXY=127.0.0.1,localhost` 即可（清空 `HTTP_PROXY` 无效）。
 
 ## 路线图
 
@@ -191,3 +193,4 @@ CI（`.github/workflows/ci.yml`）跑三件事：ruff 格式与 lint（3.11，ru
 - **M3 记忆** ✅ RAG over 个人笔记
 - **M4 多 Agent + MCP** ✅ MCP 客户端 + 路由/接力/黑板
 - **M5 打磨** ✅ 失败率告警 + 成本统计 + 简单控制台
+- **M6 网关协同** ✅ InferGate 会话身份 + 幂等键 + capabilities 协商（`app/gateway/`）；评测脚本 `scripts/eval_resume.py`（崩溃恢复）、`scripts/eval_retrieval.py`（检索 Hit@K）
