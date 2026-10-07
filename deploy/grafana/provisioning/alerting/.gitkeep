@@ -1,0 +1,2 @@
+# 占位：Grafana 会去读 /etc/grafana/provisioning/{plugins,alerting} 两个目录，
+# 目录不存在时每次启动都打一条 level=error。这里放一个空占位文件，只为了让目录随 git 存在。

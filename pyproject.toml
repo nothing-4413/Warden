@@ -35,6 +35,11 @@ testpaths = ["tests"]
 pythonpath = ["."]
 # 写错 marker / ini 选项直接报错，而不是悄悄跳过
 addopts = "--strict-markers --strict-config"
+# 唯一的告警来自 .venv 里的 starlette（`StarletteDeprecationWarning(UserWarning)`，建议装 httpx2），
+# 与本仓代码无关：按消息前缀静音，别让它每次跑测试都顶在输出末尾。
+filterwarnings = [
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
 markers = [
     "live: 需要真实外部服务（InferGate / mock 上游）——由环境变量门控，默认跳过",
 ]
