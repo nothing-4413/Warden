@@ -20,6 +20,7 @@
 - 未关闭的 sqlite 句柄：CLI 的「未知任务」早退路径与 `chat` / `index-notes` / `search` 的异常路径漏掉 `store.close()`（改用 `finally`）；`MCPClient.close()` 只关 stdin，stdout 的 `TextIOWrapper` 留到解释器退出；`scripts/eval_router.py` 透传上游 4xx/5xx 时没有关闭 `HTTPError` 自带的 body 流。三处都不影响功能，但会让长驻进程/测试会话出现 `ResourceWarning`。
 - 大盘两个面板在还没有对应样本时显示 `No data`：失败率（没有 `status="error"` 序列）与网关幂等回放（计数器还没出现过），表达式补 `or vector(0)`，现在按 0 显示。
 - `deploy/docker-compose.yml` 的 Grafana 镜像从 `latest` 钉到 `11.6.0`：13.2.x 在本机会反复重启内置数据源插件（`plugin process exited` → `level=error "Could not find plugin definition for data source"`），表现为面板全 `No data`。
+- CI 回归：`pytest` 配置补 `pythonpath = ["."]`。`tests/test_eval_retrieval.py` / `tests/test_eval_router.py` 里的 `import scripts.*` 只在本机 `python -m pytest`（会把 cwd 放进 `sys.path`）下可用，而 CI 用的是 `pytest` 控制台脚本，Linux 上收集阶段直接 `ModuleNotFoundError: No module named 'scripts'`——最近 4 次推送的 test job 其实都是红的（lint / docker 通过），本机两种跑法现在都复现并修好了。
 
 ### 测试
 

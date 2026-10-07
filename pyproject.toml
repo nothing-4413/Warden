@@ -30,6 +30,9 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# 让 `import scripts.*` 在两种跑法下都能用：`python -m pytest` 会把 cwd 放进 sys.path，
+# 但 CI 里用的 `pytest` 控制台脚本不会 —— 缺了这行 Linux CI 收集阶段就报 ModuleNotFoundError。
+pythonpath = ["."]
 # 写错 marker / ini 选项直接报错，而不是悄悄跳过
 addopts = "--strict-markers --strict-config"
 markers = [
