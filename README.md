@@ -74,13 +74,13 @@ Warden/
 │   ├── notify/             # 通知（console / file）
 │   └── tasks/              # news_digest / repo_report / weekly_review
 ├── Dockerfile              # 应用镜像（可选）
-├── docs/console.png        # 控制台截图（README 用）
+├── docs/                   # README 截图：控制台、Grafana 大盘
 ├── scripts/                # 冒烟与评测脚本（纯标准库，可独立运行）
 │   ├── smoke.py            #   真实 LLM 端到端冒烟
 │   ├── eval_resume.py      #   崩溃恢复评测（跨进程 os._exit 注入）
 │   ├── eval_retrieval.py   #   检索 Hit@K / MRR 评测
 │   └── eval_router.py      #   把 chat / embeddings 两个本地实例拼成一个 base_url
-├── deploy/                 # docker compose：应用 + Prometheus + Grafana
+├── deploy/                 # docker compose：应用 + Prometheus + Grafana（数据源与大盘自动加载）
 └── tests/                  # 单元测试（FakeLLM，零网络）
 ```
 
@@ -135,6 +135,14 @@ docker compose up -d --build
 
 容器里的 `localhost` 指容器自身，因此 compose 把 `WARDEN_LLM_BASE_URL` 默认设为 `http://host.docker.internal:11434/v1`（连宿主机的 Ollama）；用远程 LLM 时在 shell 或 `deploy/.env` 里设同名变量即可覆盖。运行时数据落在 `warden-data` / `warden-reports` 两个命名卷里。
 
+Grafana 的数据源和「Warden 概览」大盘随 compose 自动加载（`deploy/grafana/`），登录就能看图，不用手工配：
+
+![Warden 概览大盘](docs/dashboard.png)
+
+八个面板：5 分钟失败率（与告警同口径）、运行数、成本、运行速率（按状态）、运行耗时 P95（按 kind）、Token 速率、按任务/Agent 运行数、网关幂等回放。本机实跑验证过：容器内 4 次 `POST /api/v1/chat`（同一个 `request_id` 再发一次走幂等回放、`steps` 为空且不再调模型），Prometheus target `app:8000` 为 up、`WardenHighFailureRate` 规则已加载，面板全部出数。
+
+> Grafana 镜像钉在 `11.6.0`：`grafana:latest`（13.2.x）在本机会反复重启内置数据源插件（`plugin process exited` → `Could not find plugin definition for data source`），面板全 `No data`。
+
 对话请求示例：
 
 ```bash
@@ -164,7 +172,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat \
 - **工具层**：新增工具 = 写一个 `Tool` + `register`，核心循环零改动。输入用 pydantic 校验并生成 JSON Schema；可选 `output_model` 输出校验、`timeout_s` 执行超时。
 - **记忆**：笔记分块 → 嵌入 → SQLite 向量库暴力余弦检索。`search_notes` 读、`save_note` 写回，长期记忆闭环；可选查询改写 + LLM 重排两级检索增强。
 - **多 Agent + MCP**：`Orchestrator` 路由到专家、`CriticPipeline` 接力（researcher → critic）、`BlackboardTeam` 共享黑板；MCP 客户端零依赖 stdio JSON-RPC，工具动态适配进注册表。
-- **部署与监控**：`deploy/` 下 `docker compose up -d --build` 一把起应用(:8000) + Prometheus(:9090) + Grafana(:3000)，失败率告警（5 分钟窗口 error > 20%）。只想跑监控、应用在宿主机用 uvicorn 时：`docker compose up -d prometheus grafana`，并把 `deploy/prometheus/prometheus.yml` 的 target 改成 `host.docker.internal:8000`。
+- **部署与监控**：`deploy/` 下 `docker compose up -d --build` 一把起应用(:8000) + Prometheus(:9090) + Grafana(:3000)，失败率告警（5 分钟窗口 error > 20%）；Grafana 的数据源与「Warden 概览」八面板大盘随 compose 自动加载，本机实跑验证过（容器内 4 次对话请求 → target up、面板出数）。只想跑监控、应用在宿主机用 uvicorn 时：`docker compose up -d prometheus grafana`，并把 `deploy/prometheus/prometheus.yml` 的 target 改成 `host.docker.internal:8000`。
 
 ## 开发
 

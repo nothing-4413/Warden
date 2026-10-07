@@ -1,0 +1,13 @@
+# 仪表盘自动加载：把 /var/lib/grafana/dashboards 下的 JSON 全部载入。
+apiVersion: 1
+
+providers:
+  - name: warden
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

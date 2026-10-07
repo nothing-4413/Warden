@@ -43,12 +43,19 @@ services:
       - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
 
   grafana:
-    image: grafana/grafana:latest
+    # 钉 11.6.0：grafana:latest（13.2.x）在本机会反复重启内置数据源插件
+    # （日志 "plugin process exited" → level=error "Could not find plugin definition for data source"），
+    # 表现为面板全 "No data"；11.6.0 实测能出数。
+    image: grafana/grafana:11.6.0
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      # 数据源与「Warden 概览」仪表盘都随 compose 自动加载，登录即可看图
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
 
 volumes:
   warden-data:
