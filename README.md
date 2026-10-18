@@ -80,11 +80,13 @@ Warden/
 │   ├── eval_resume.py      #   崩溃恢复评测（跨进程 os._exit 注入）
 │   ├── eval_retrieval.py   #   检索 Hit@K / MRR 评测
 │   └── eval_router.py      #   把 chat / embeddings 两个本地实例拼成一个 base_url
-├── deploy/                 # docker compose：应用 + Prometheus + Grafana（数据源与大盘自动加载）
+├── deploy/                 # docker compose：应用 + 本地 Ollama（自动拉模型）+ Prometheus + Grafana
 └── tests/                  # 单元测试（FakeLLM，零网络）
 ```
 
 ## 快速开始
+
+> 想一条命令起全栈（应用 + 本地 Ollama + 监控，不用自己装 Ollama）：直接看下面的「Docker」小节；剩下的手动步骤适合本机开发。
 
 ```bash
 # 1. 安装（Python 3.11+）
@@ -123,17 +125,36 @@ pytest -q
 python -m scripts.smoke
 ```
 
-### Docker（可选）
+### Docker（可选，一条命令起全栈）
 
-一条命令起全栈（应用 + 监控）。镜像基于 `python:3.14-slim`，以非 root 用户运行，容器内跑 `uvicorn`：
+一条命令起全栈：应用 + 本地 Ollama（含首次模型拉取）+ Prometheus + Grafana。镜像基于 `python:3.14-slim`，以非 root 用户运行，容器内跑 `uvicorn`：
 
 ```bash
 cd deploy
 docker compose up -d --build
-# 控制台 http://localhost:8000 ；Prometheus http://localhost:9090 ；Grafana http://localhost:3000（admin / admin）
+# 控制台 http://localhost:8000 ；Ollama http://localhost:11534（容器内仍是 11434）
+# Prometheus http://localhost:9090 ；Grafana http://localhost:3000（admin / admin）
 ```
 
-容器里的 `localhost` 指容器自身，因此 compose 把 `WARDEN_LLM_BASE_URL` 默认设为 `http://host.docker.internal:11434/v1`（连宿主机的 Ollama）；用远程 LLM 时在 shell 或 `deploy/.env` 里设同名变量即可覆盖。运行时数据落在 `warden-data` / `warden-reports` 两个命名卷里。
+`app` 默认连同一个 compose 网络里的 `ollama` 服务（`http://ollama:11434/v1`），**不再要求宿主机事先装好并启动 Ollama，也不要求先手动 `ollama pull`**。首次启动时，一次性容器 `ollama-pull` 会等 Ollama 就绪，再把 `.env` 里的 `WARDEN_LLM_MODEL`（默认 `qwen2.5:7b`）与 `WARDEN_EMBEDDING_MODEL`（默认 `nomic-embed-text`）拉进 `ollama-models` 命名卷（约 5 GB，只需下一次）：
+
+```bash
+docker compose logs -f ollama-pull     # 看下载进度，出现 done 即拉完
+docker compose ps                      # ollama-pull 显示 Exited (0) 是正常的（一次性任务）
+```
+
+模型拉完之前对话会报 `model not found`，拉完后无需重启 `app`。模型缓存在命名卷里，`docker compose down`（不带 `-v`）后再起不用重新下载。
+
+这条链路本机用 `all-minilm:22m` 小模型实跑验证过：`ollama` 容器 healthy → `ollama-pull` 退出码 0 → `ollama list` 能看到模型；默认 7B 模型走同一条路径，只是下载更久。
+
+细节与覆盖方式：
+
+- **端口 / 本机已装 Ollama**：Docker 的 Ollama 默认发布到宿主机 `11534`（容器内仍是 `11434`），就是为了不跟本机原生 Ollama 抢 `11434`；`11434` 空闲且想用惯例端口时设 `WARDEN_OLLAMA_PORT=11434`。`app` 始终走服务名 `ollama:11434`，不受这个映射影响。宿主机 CLI 想用这个 Docker Ollama，就把 `WARDEN_LLM_BASE_URL` 设为 `http://127.0.0.1:11534/v1`；想直接复用本机已装 Ollama（省掉再下一份模型）则用下一条的 `--no-deps`。
+- **用远程 LLM / 宿主机的 Ollama**：在 shell 或 `deploy/.env` 里设 `WARDEN_LLM_BASE_URL`（例如 `http://host.docker.internal:11434/v1`），并用 `--no-deps` 跳过 Ollama 容器：`docker compose up -d --build app prometheus grafana --no-deps`。
+- **想换模型**：改 `.env` 里的 `WARDEN_LLM_MODEL` / `WARDEN_EMBEDDING_MODEL`（`app` 与 `ollama-pull` 读同一份 `.env`，自动保持一致；纯 CPU 用小一点的对话模型更快）。只想额外预拉模型、不改 app 实际使用哪个模型时，再用 `WARDEN_OLLAMA_MODELS="a,b"` 给列表（写在 shell 或 `deploy/.env`，根目录 `.env` 里的同名项不参与 compose 插值）。拉取失败会重试 3 次，之后可重跑 `docker compose up -d ollama-pull`。
+- **GPU**：`deploy/docker-compose.yml` 的 `ollama` 服务里有注释掉的 NVIDIA 预留配置，取消注释即可（Docker Desktop + WSL2 需先装 NVIDIA Container Toolkit）；纯 CPU 也能跑，只是慢。
+
+运行时数据落在 `warden-data` / `warden-reports` / `ollama-models` 三个命名卷里；拉模型逻辑在 `deploy/ollama-pull.sh`（`.gitattributes` 强制 shell 脚本走 LF，避免 Windows 上 CRLF 导致容器里 `/bin/sh` 报错）。
 
 Grafana 的数据源和「Warden 概览」大盘随 compose 自动加载（`deploy/grafana/`），登录就能看图，不用手工配：
 
@@ -157,7 +178,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat \
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `WARDEN_LLM_BASE_URL` | `http://localhost:11434/v1` | OpenAI 兼容地址（Ollama / OpenAI / vLLM） |
+| `WARDEN_LLM_BASE_URL` | `http://localhost:11434/v1` | OpenAI 兼容地址（Ollama / OpenAI / vLLM）；compose 里默认覆盖为 `http://ollama:11434/v1` |
 | `WARDEN_LLM_MODEL` | `qwen2.5:7b` | 对话模型 |
 | `WARDEN_EMBEDDING_MODEL` | `nomic-embed-text` | 嵌入模型（记忆检索用） |
 | `WARDEN_NOTES_DIR` | 空 | 个人笔记目录（RAG 索引源） |
@@ -172,7 +193,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat \
 - **工具层**：新增工具 = 写一个 `Tool` + `register`，核心循环零改动。输入用 pydantic 校验并生成 JSON Schema；可选 `output_model` 输出校验、`timeout_s` 执行超时。
 - **记忆**：笔记分块 → 嵌入 → SQLite 向量库暴力余弦检索。`search_notes` 读、`save_note` 写回，长期记忆闭环；可选查询改写 + LLM 重排两级检索增强。
 - **多 Agent + MCP**：`Orchestrator` 路由到专家、`CriticPipeline` 接力（researcher → critic）、`BlackboardTeam` 共享黑板；MCP 客户端零依赖 stdio JSON-RPC，工具动态适配进注册表。
-- **部署与监控**：`deploy/` 下 `docker compose up -d --build` 一把起应用(:8000) + Prometheus(:9090) + Grafana(:3000)，失败率告警（5 分钟窗口 error > 20%）；Grafana 的数据源与「Warden 概览」八面板大盘随 compose 自动加载，本机实跑验证过（容器内 4 次对话请求 → target up、面板出数）。只想跑监控、应用在宿主机用 uvicorn 时：`docker compose up -d prometheus grafana`，并把 `deploy/prometheus/prometheus.yml` 的 target 改成 `host.docker.internal:8000`。
+- **部署与监控**：`deploy/` 下 `docker compose up -d --build` 一把起应用(:8000) + 本地 Ollama（容器内 :11434，宿主机默认 :11534，`ollama-pull` 自动拉模型） + Prometheus(:9090) + Grafana(:3000)，失败率告警（5 分钟窗口 error > 20%）；Grafana 的数据源与「Warden 概览」八面板大盘随 compose 自动加载，本机实跑验证过（容器内 4 次对话请求 → target up、面板出数）。只想跑监控、应用在宿主机用 uvicorn 时：`docker compose up -d prometheus grafana`，并把 `deploy/prometheus/prometheus.yml` 的 target 改成 `host.docker.internal:8000`。
 
 ## 开发
 

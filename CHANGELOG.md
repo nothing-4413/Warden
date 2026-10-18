@@ -11,9 +11,12 @@
 - `eval_resume.py` 增加第三种任务形态（时间工具 + 计算器两步链条），崩溃点从「仅第一步之后」扩到「链条中间」，用来覆盖更深一层的半成品状态。本机实测 30/30 = 100%（0 次剔除），`answer` 全部正确、无重复步骤。
 - `scripts/eval_router.py`：把 chat / embeddings 两个本地实例拼成一个 OpenAI 兼容 base_url（Warden 的 `LLMClient` 与 `EmbeddingClient` 共用 `llm_base_url`）。纯标准库，用 Ollama 时不需要。
 - `deploy/grafana/`：数据源（`provisioning/datasources/prometheus.yml`）与「Warden 概览」八面板大盘（`dashboards/warden.json`）随 compose 自动加载，`docker compose up -d --build` 后登录 Grafana 即可看图（失败率 / 运行数 / 成本 / 运行速率 / 耗时 P95 / Token 速率 / 按任务-Agent 运行数 / 网关幂等回放）。本机实跑验证：容器内 4 次 `POST /api/v1/chat`（重复 `request_id` 走幂等回放、不再调模型）、Prometheus target `app:8000` 为 up、`WardenHighFailureRate` 规则已加载、面板全部出数。
+- `deploy/docker-compose.yml` 增加 `ollama` 与一次性 `ollama-pull` 服务：`docker compose up -d --build` 会一起起本地 Ollama，并按 `.env` 里的 `WARDEN_LLM_MODEL` / `WARDEN_EMBEDDING_MODEL` 自动把对话/嵌入模型拉进 `ollama-models` 命名卷（拉取逻辑在新增的 `deploy/ollama-pull.sh`，失败重试 3 次）；`app` 的默认 `WARDEN_LLM_BASE_URL` 从 `host.docker.internal:11434` 改为 compose 服务名 `http://ollama:11434/v1`；Ollama 的宿主机端口默认发布到 `11534`，避开本机原生 Ollama 常占的 `11434`（可用 `WARDEN_OLLAMA_PORT` 改），远程 LLM / 宿主机 Ollama 可用 `--no-deps` 跳过 Ollama。本机用 `all-minilm:22m` 小模型实跑验证拉取链路：`ollama` healthy、`ollama-pull` 退出码 0、`ollama list` 出现模型。
+- `.gitattributes`：`*.sh text eol=lf`，防止 Windows 上 `core.autocrlf=true` 把挂进 Linux 容器的 `deploy/ollama-pull.sh` 转成 CRLF（`/bin/sh` 会报 `$'\r': not found`）。
 
 ### 修复
 
+- 一键启动不再依赖宿主机已装并启动 Ollama：此前 README 的 `docker compose up -d --build` 只起 app 与监控，容器默认连 `host.docker.internal:11434`，宿主机没起 Ollama（或模型没 pull）时对话直接失败；现在 Ollama 与模型拉取都进了同一个 compose。
 - `extract_json()`：模型在一轮里连吐多个 JSON（例如先 `action` 再 `final_answer`）时，改为取**第一个完整对象**。旧实现把整段拼起来解析，解析失败后原始 JSON 文本被当成最终答案，**工具因此从不被执行**——本机 1.5B 模型实测正是这种输出，修复前 `tools` 完全走不到。
 - 本机目标不再被系统代理劫持：新增 `app/net.py`，LLM / 嵌入 / 能力探测三条出站请求在目标是 `localhost`/回环 IP 时关掉环境代理（`trust_env=False`），指外网时行为不变。修复前 Windows 上开着系统代理（实测注册表 `127.0.0.1:7897`）连本机 Ollama 都会返回 502 空 body，且 Ollama 侧看不到请求。
 - `git log` 输出在 Windows 上被按本地代码页（GBK）解码：含中文的提交信息会在读取线程里抛 `UnicodeDecodeError`，`repo_report` / `weekly_review` 的「近期提交」段落被静默丢掉。两处 `subprocess.run` 显式 `encoding="utf-8", errors="replace"`。
@@ -41,6 +44,7 @@
 - README 新增「网关实网回归」小节：在本机 InferGate 最小栈（`agent-local.yaml`）上跑通 3 个 `live` 用例的步骤与线路事实（同一会话、重放不打上游、capabilities 带回上下文窗口）。
 - README 路线图补 M6（InferGate 网关协同）与两个评测脚本的入口。
 - README 的 Docker 小节补 Grafana 自动加载说明、`docs/dashboard.png` 大盘截图与实跑证据（容器内 4 次对话请求、target up、告警规则加载）；目录结构的 `docs/` 与 `deploy/` 两行同步。
+- README Docker 小节重写为「一条命令含本地 Ollama」：首次模型拉取与日志查看、`WARDEN_OLLAMA_PORT` 端口冲突、远程 LLM 的 `--no-deps` 用法、自定义模型列表与 GPU 预留配置；`.env.example` 补充容器内 `WARDEN_LLM_BASE_URL` 被 compose 覆盖为 `http://ollama:11434/v1` 的说明。
 
 ## [0.2.0] - 2026-10-06
 

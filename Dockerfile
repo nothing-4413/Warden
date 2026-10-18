@@ -1,6 +1,6 @@
 # Warden 应用镜像（个人自托管场景：单阶段、够用就好）。
 # 构建：docker build -t warden:local .
-# 一把起全栈：cd deploy && docker compose up -d --build
+# 一键起全栈（应用 + 本地 Ollama + 监控）：cd deploy && docker compose up -d --build
 FROM python:3.14-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
