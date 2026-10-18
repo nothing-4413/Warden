@@ -25,6 +25,11 @@ param(
     [switch]$Wait,
     [string]$ChatModel = "qwen2.5-1.5b-instruct-q4_k_m.gguf",
     [string]$EmbedModel = "nomic-embed-text-v1.5.Q8_0.gguf",
+    # 别名必须和 .env 里的 WARDEN_LLM_MODEL / WARDEN_EMBEDDING_MODEL 一模一样，
+    # 且要用 **Ollama 标签写法**：compose 里的 ollama-pull 拿同一份 .env 去 pull，
+    # 写成 GGUF 文件名（qwen2.5-1.5b-instruct）在 registry 里不存在，任务只会一直 404。
+    [string]$ChatAlias = "qwen2.5:1.5b",
+    [string]$EmbedAlias = "nomic-embed-text",
     [int]$ChatPort = 11500,
     [int]$EmbedPort = 11501,
     [int]$Threads = 8
@@ -66,8 +71,8 @@ if (-not (Test-Path $exe)) { throw "找不到 llama-server：$exe" }
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
 $specs = @(
-    @{ name = "chat"; port = $ChatPort; model = $ChatModel; alias = "qwen2.5-1.5b-instruct"; extra = @("-c", "4096", "-t", "$Threads") },
-    @{ name = "embed"; port = $EmbedPort; model = $EmbedModel; alias = "nomic-embed-text-v1.5"; extra = @("--embeddings", "-c", "2048", "-t", "4") }
+    @{ name = "chat"; port = $ChatPort; model = $ChatModel; alias = $ChatAlias; extra = @("-c", "4096", "-t", "$Threads") },
+    @{ name = "embed"; port = $EmbedPort; model = $EmbedModel; alias = $EmbedAlias; extra = @("--embeddings", "-c", "2048", "-t", "4") }
 )
 
 $started = @()

@@ -87,6 +87,9 @@ services:
       # 用远程 LLM / 宿主机的 Ollama 时，在 shell 或 deploy/.env 里设 WARDEN_LLM_BASE_URL 覆盖，
       # 例如 http://host.docker.internal:11434/v1。
       WARDEN_LLM_BASE_URL: ${WARDEN_LLM_BASE_URL:-http://ollama:11434/v1}
+      # 嵌入也必须指回 ollama：根目录 .env 里为「宿主机 llama.cpp」写的是 127.0.0.1:11501，
+      # 在容器里那是容器自己，直接复制过去会让 search_notes / index-notes 全部连不上。
+      WARDEN_EMBEDDING_BASE_URL: ${WARDEN_EMBEDDING_BASE_URL:-http://ollama:11434/v1}
       WARDEN_API_HOST: 0.0.0.0
     depends_on:
       ollama:

@@ -17,6 +17,8 @@
 
 ### 修复
 
+- 模型名改用 **Ollama 标签写法**（`qwen2.5:1.5b` / `nomic-embed-text`）：`ollama-pull` 读的是同一份 `.env` 去 `ollama pull`，写成 GGUF 文件名（`qwen2.5-1.5b-instruct`、`nomic-embed-text-v1.5`）时 registry 里没有对应 manifest，一次性容器重试 3 次后退出（`Error: pull model manifest: file does not exist`），Ollama 里一个模型都没有 → compose 的 `app` 三个任务全 404。本地 llama.cpp 用 `--alias` 装成同样的名字，一份 `.env` 两种后端通用。
+- `deploy/docker-compose.yml` 给 `app` 补 `WARDEN_EMBEDDING_BASE_URL` 覆盖：根目录 `.env` 里为宿主机 llama.cpp 写的 `127.0.0.1:11501` 在容器里指向容器自己，会让 `search_notes` / `index-notes` 全部连不上；现在和 `WARDEN_LLM_BASE_URL` 一样默认回落 `http://ollama:11434/v1`。
 - 「模型不存在」不再重试 3 次：`LLMError` 带 `status_code`，`with_retry(retriable=is_retriable)` 让 400/401/403/404 这类配置错误一次即止（此前 `runs.attempts` 恒为 3，白等 1s+2s 退避，看起来像"服务不稳定"，其实改一行 `.env` 就能修）；404 的报错文本补一句"可用模型见 `GET {base_url}/models`"，不至于只看到一句 `model not found` 不知道下一步。
 - 本机 `.env` 指向 `qwen2.5:7b` 但 Ollama 上只装了 `qwen2.5:0.5b`：`news_digest` / `repo_report` / `weekly_review` 三个定时任务和全部 4 个 chat agent 一起 404。现改走仓库自带的 `data/eval/llama/llama-server.exe` + `data/eval/models/qwen2.5-1.5b-instruct-q4_k_m.gguf`（对话 :11500），嵌入用 `nomic-embed-text-v1.5`（:11501），三个任务与 `POST /api/v1/chat` 均实跑通过、`runs.attempts=1`。
 - 一键启动不再依赖宿主机已装并启动 Ollama：此前 README 的 `docker compose up -d --build` 只起 app 与监控，容器默认连 `host.docker.internal:11434`，宿主机没起 Ollama（或模型没 pull）时对话直接失败；现在 Ollama 与模型拉取都进了同一个 compose。
