@@ -91,7 +91,7 @@ def test_httpx_env_kwargs_only_for_loopback():
 def test_llm_client_disables_env_proxy_for_local_base_url(monkeypatch):
     rec = Recorder(FakeResp(payload=CHAT_OK))
     monkeypatch.setattr(httpx, "post", rec)
-    settings = Settings(llm_base_url="http://127.0.0.1:11434/v1", llm_model="m")
+    settings = Settings(_env_file=None, llm_base_url="http://127.0.0.1:11434/v1", llm_model="m")
     assert LLMClient(settings).chat([{"role": "user", "content": "hi"}]) == "ok"
     assert rec.calls[0]["url"] == "http://127.0.0.1:11434/v1/chat/completions"
     assert rec.trust_env is False
@@ -100,7 +100,9 @@ def test_llm_client_disables_env_proxy_for_local_base_url(monkeypatch):
 def test_llm_client_keeps_env_proxy_for_remote_base_url(monkeypatch):
     rec = Recorder(FakeResp(payload=CHAT_OK))
     monkeypatch.setattr(httpx, "post", rec)
-    settings = Settings(llm_base_url="https://api.openai.com/v1", llm_model="gpt-4o-mini")
+    settings = Settings(
+        _env_file=None, llm_base_url="https://api.openai.com/v1", llm_model="gpt-4o-mini"
+    )
     LLMClient(settings).chat([{"role": "user", "content": "hi"}])
     # 外网目标保持 httpx 默认：企业代理 / SSL_CERT_FILE 仍生效
     assert "trust_env" not in rec.calls[0]
@@ -115,7 +117,9 @@ def test_embedding_client_disables_env_proxy_and_orders_by_index(monkeypatch):
     }
     rec = Recorder(FakeResp(payload=payload))
     monkeypatch.setattr(httpx, "post", rec)
-    settings = Settings(llm_base_url="http://localhost:11434/v1", embedding_model="emb")
+    settings = Settings(
+        _env_file=None, llm_base_url="http://localhost:11434/v1", embedding_model="emb"
+    )
     out = EmbeddingClient(settings).embed(["a", "b"])
     assert out == [[0.1], [0.2]]  # 后端乱序返回也要按 index 纠正
     assert rec.calls[0]["url"] == "http://localhost:11434/v1/embeddings"
@@ -124,14 +128,14 @@ def test_embedding_client_disables_env_proxy_and_orders_by_index(monkeypatch):
 
 def test_embedding_client_wraps_transport_error(monkeypatch):
     monkeypatch.setattr(httpx, "post", Recorder(httpx.ConnectError("boom")))
-    settings = Settings(llm_base_url="http://127.0.0.1:11434/v1")
+    settings = Settings(_env_file=None, llm_base_url="http://127.0.0.1:11434/v1")
     with pytest.raises(EmbeddingError):
         EmbeddingClient(settings).embed(["a"])
 
 
 def test_embedding_client_wraps_bad_shape(monkeypatch):
     monkeypatch.setattr(httpx, "post", Recorder(FakeResp(payload={"data": [{"no_index": 1}]})))
-    settings = Settings(llm_base_url="http://127.0.0.1:11434/v1")
+    settings = Settings(_env_file=None, llm_base_url="http://127.0.0.1:11434/v1")
     with pytest.raises(EmbeddingError):
         EmbeddingClient(settings).embed(["a"])
 

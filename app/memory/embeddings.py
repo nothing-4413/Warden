@@ -22,7 +22,9 @@ class EmbeddingClient:
     def embed(self, texts: list[str]) -> list[list[float]]:
         """把一批文本嵌入成向量，返回与输入等长的向量列表。"""
         payload = {"model": self.settings.embedding_model, "input": texts}
-        url = f"{self.settings.llm_base_url}/embeddings"
+        # 用 embedding_endpoint_base 而不是 llm_base_url：llama-server 一个实例只能挂
+        # 一个模型，对话与嵌入天然是两套服务，必须能分别指地址
+        url = f"{self.settings.embedding_endpoint_base}/embeddings"
         try:
             resp = httpx.post(
                 url,

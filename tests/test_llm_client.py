@@ -96,3 +96,40 @@ def test_non_200_status_is_wrapped_with_body(monkeypatch) -> None:
 
     with pytest.raises(LLMError, match="LLM returned 500"):
         LLMClient(Settings()).chat([{"role": "user", "content": "hi"}])
+
+
+def test_404_model_not_found_points_at_models_endpoint(monkeypatch) -> None:
+    """线上真实踩过的坑：模型没拉下来时，报错要能直接指向下一步排查动作。"""
+    body = '{"error":{"message":"model \'qwen2.5:7b\' not found","type":"not_found_error"}}'
+    monkeypatch.setattr(
+        httpx, "post", lambda *a, **k: FakeResp({"error": {}}, status_code=404, text=body)
+    )
+
+    with pytest.raises(LLMError) as excinfo:
+        LLMClient(Settings()).chat([{"role": "user", "content": "hi"}])
+
+    err = excinfo.value
+    assert err.status_code == 404
+    assert err.retriable is False  # 配置错，交给 with_retry 也不会重试
+    assert "/models" in str(err)
+    assert "model 'qwen2.5:7b' not found" in str(err)
+
+
+@pytest.mark.parametrize("status", [408, 409, 429, 500, 502, 503])
+def test_transient_statuses_are_retriable(monkeypatch, status) -> None:
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: FakeResp({}, status_code=status, text="x"))
+
+    with pytest.raises(LLMError) as excinfo:
+        LLMClient(Settings()).chat([{"role": "user", "content": "hi"}])
+
+    assert excinfo.value.retriable is True
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 422])
+def test_client_side_4xx_is_not_retriable(monkeypatch, status) -> None:
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: FakeResp({}, status_code=status, text="x"))
+
+    with pytest.raises(LLMError) as excinfo:
+        LLMClient(Settings()).chat([{"role": "user", "content": "hi"}])
+
+    assert excinfo.value.retriable is False

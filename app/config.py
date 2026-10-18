@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.0
     llm_timeout_s: float = 120.0
 
+    # 嵌入端点：留空 = 复用 llm_base_url（Ollama 这类一个后端同时提供对话与嵌入时最省事）。
+    # 一次只挂一个模型的推理服务（llama-server / vLLM）必须拆开：
+    #   对话跑 :11500，嵌入跑 :11501 → WARDEN_EMBEDDING_BASE_URL=http://127.0.0.1:11501/v1
+    embedding_base_url: str = ""
+
     # Agent 循环
     agent_max_steps: int = 10
     # 工具观测截断上限（上下文工程：防止长工具输出撑爆上下文窗口，0 = 不截断）
@@ -99,6 +104,11 @@ class Settings(BaseSettings):
     @property
     def rss_source_list(self) -> list[str]:
         return [s.strip() for s in self.rss_sources.split(",") if s.strip()]
+
+    @property
+    def embedding_endpoint_base(self) -> str:
+        """嵌入请求实际打到哪：显式配置优先，否则复用对话端点（默认行为不变）。"""
+        return self.embedding_base_url or self.llm_base_url
 
 
 _settings: Settings | None = None

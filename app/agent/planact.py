@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 
 from ..harness import RunRecord, with_retry
+from ..llm import is_retriable
 from .base import AgentRunResult, AgentStep, BaseAgent, extract_json
 
 _PLAN_TEMPLATE = """\
@@ -69,6 +70,7 @@ class PlanActAgent(BaseAgent):
             lambda: self.llm.chat(messages),
             attempts=self.settings.retry_attempts,
             backoff_s=self.settings.retry_backoff_s,
+            retriable=is_retriable,
         )
 
     def _run(self, history: list[dict], record: RunRecord | None) -> AgentRunResult:

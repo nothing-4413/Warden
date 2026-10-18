@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from ..harness import RunRecord, with_retry
+from ..llm import is_retriable
 from .base import AgentRunResult, AgentStep, BaseAgent, extract_json
 
 _SYSTEM_TEMPLATE = """\
@@ -80,6 +81,7 @@ class ReactAgent(BaseAgent):
             lambda: self.llm.chat(messages),
             attempts=self.settings.retry_attempts,
             backoff_s=self.settings.retry_backoff_s,
+            retriable=is_retriable,
         )
 
     def _chat_json(self, messages: list[dict]) -> tuple[dict | None, str]:

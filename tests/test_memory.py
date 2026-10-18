@@ -144,3 +144,33 @@ def test_retriever_reranks_candidates(tmp_path):
     # 自然相似度顺序是 a 最前（b/c 并列），LLM 重排后 top-2 应为 c、a
     assert [c.id for c in chunks] == ["c", "a"]
     store.close()
+
+
+def test_embedding_client_hits_dedicated_endpoint(monkeypatch):
+    """llama-server 一个实例只挂一个模型：嵌入要能打到和对话不同的地址。"""
+    from app.config import Settings
+    from app.memory.embeddings import EmbeddingClient
+
+    seen = {}
+
+    class FakeResp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": [{"index": 0, "embedding": [0.25, 0.5]}]}
+
+    def fake_post(url, **kwargs):
+        seen["url"] = url
+        return FakeResp()
+
+    monkeypatch.setattr("app.memory.embeddings.httpx.post", fake_post)
+    settings = Settings(
+        _env_file=None,
+        embedding_base_url="http://127.0.0.1:11501/v1",
+        embedding_model="nomic-embed-text-v1.5",
+    )
+    vectors = EmbeddingClient(settings).embed(["hello"])
+
+    assert seen["url"] == "http://127.0.0.1:11501/v1/embeddings"
+    assert vectors == [[0.25, 0.5]]

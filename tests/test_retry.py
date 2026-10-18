@@ -1,6 +1,9 @@
 """with_retry 行为：成功 / 重试后成功 / 耗尽抛错 / retriable / on_attempt 计数。"""
 
+import pytest
+
 from app.harness.retry import with_retry
+from app.llm import LLMError, is_retriable
 
 
 def test_success_no_retry():
@@ -61,3 +64,43 @@ def test_on_attempt_counts_every_try():
     except RuntimeError:
         pass
     assert seen == [1, 2, 3]
+
+
+def test_is_retriable_keeps_config_errors_single_shot():
+    """模型名写错这类 404 是配置问题：重试 3 次只会拿到同一句话，还白等 1s+2s。"""
+    calls = []
+
+    def fail():
+        calls.append(1)
+        raise LLMError("LLM returned 404: model not found", status_code=404)
+
+    try:
+        with_retry(fail, attempts=3, backoff_s=0, retriable=is_retriable)
+        raise AssertionError("should have raised")
+    except LLMError:
+        pass
+    assert calls == [1]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        LLMError("LLM returned 503: overloaded", status_code=503),
+        LLMError("LLM request failed: connect timeout"),
+        RuntimeError("tool crashed"),
+    ],
+)
+def test_is_retriable_still_retries_transient_errors(error):
+    """5xx / 网络错误（无状态码）/ 普通异常仍按原逻辑重试到底。"""
+    calls = []
+
+    def fail():
+        calls.append(1)
+        raise error
+
+    try:
+        with_retry(fail, attempts=3, backoff_s=0, retriable=is_retriable)
+        raise AssertionError("should have raised")
+    except Exception:
+        pass
+    assert len(calls) == 3

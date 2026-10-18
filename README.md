@@ -181,6 +181,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat \
 | `WARDEN_LLM_BASE_URL` | `http://localhost:11434/v1` | OpenAI 兼容地址（Ollama / OpenAI / vLLM）；compose 里默认覆盖为 `http://ollama:11434/v1` |
 | `WARDEN_LLM_MODEL` | `qwen2.5:7b` | 对话模型 |
 | `WARDEN_EMBEDDING_MODEL` | `nomic-embed-text` | 嵌入模型（记忆检索用） |
+| `WARDEN_EMBEDDING_BASE_URL` | 空（复用 `llm_base_url`） | 嵌入端点；`llama-server` / vLLM 一个实例只挂一个模型，对话与嵌入要拆两个端口时填（例 `http://127.0.0.1:11501/v1`） |
 | `WARDEN_NOTES_DIR` | 空 | 个人笔记目录（RAG 索引源） |
 | `WARDEN_NOTIFY_KIND` | `console` | 任务通知方式：console / file |
 

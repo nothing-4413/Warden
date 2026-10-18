@@ -14,6 +14,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from ..harness import RunRecord, new_trace_id, record_run, trace_span, with_retry
+from ..llm import is_retriable
 from .base import BaseTask, Services, TaskResult
 from .registry import TaskRegistry
 
@@ -63,6 +64,7 @@ def _run_task(task: BaseTask, ctx: Services) -> TaskResult:
                 lambda: task.run(ctx),
                 attempts=ctx.settings.retry_attempts,
                 backoff_s=ctx.settings.retry_backoff_s,
+                retriable=is_retriable,
                 on_attempt=attempts.append,
             )
         except Exception as exc:  # 重试仍失败：兜底，不让调度线程崩溃

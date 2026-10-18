@@ -90,3 +90,18 @@ def test_settings_are_frozen():
 
 def test_get_settings_is_a_singleton():
     assert get_settings() is get_settings()
+
+
+def test_embedding_endpoint_falls_back_to_llm_base_url():
+    """默认行为不变：留空就复用对话端点（Ollama 一个后端全包）。"""
+    s = Settings(_env_file=None)
+    assert s.embedding_base_url == ""
+    assert s.embedding_endpoint_base == s.llm_base_url
+
+
+def test_embedding_endpoint_can_be_split(monkeypatch):
+    """llama-server 一实例一模型：对话 :11500、嵌入 :11501 要能分别指。"""
+    monkeypatch.setenv("WARDEN_EMBEDDING_BASE_URL", "http://127.0.0.1:11501/v1")
+    s = Settings(_env_file=None)
+    assert s.embedding_endpoint_base == "http://127.0.0.1:11501/v1"
+    assert s.llm_base_url == "http://localhost:11434/v1"

@@ -6,6 +6,7 @@
 
 ### 新增
 
+- `WARDEN_EMBEDDING_BASE_URL`：嵌入请求可以指向和对话不同的端点（留空 = 复用 `llm_base_url`，旧行为不变）。`llama-server` / `vLLM` 这类一实例一模型的后端必须把对话与嵌入拆成两个端口，以前只能靠 `scripts/eval_router.py` 拼一个假网关，现在配置即可。
 - 评测脚本：`scripts/eval_resume.py`（`os._exit` 跨进程硬崩 + `resume` 续跑，统计恢复成功率、重复步骤、崩溃点已落库步数）、`scripts/eval_retrieval.py`（自建中文标注语料，统计 Hit@1/@3/@k 与 MRR，`--compare` 对照「纯向量」与「查询改写 + LLM 重排」）。
 - `eval_retrieval.py --sweep 1,3,4,8`：检索一次、从同一份排序里数出 Hit@K 曲线（各点之间可比，也省掉 K 倍嵌入开销）。本机实测 Hit@1 42.5% / Hit@3 55.0% / Hit@4 65.0% / Hit@8 85.0%，MRR 0.538（k=8）。
 - `eval_resume.py` 增加第三种任务形态（时间工具 + 计算器两步链条），崩溃点从「仅第一步之后」扩到「链条中间」，用来覆盖更深一层的半成品状态。本机实测 30/30 = 100%（0 次剔除），`answer` 全部正确、无重复步骤。
@@ -16,6 +17,8 @@
 
 ### 修复
 
+- 「模型不存在」不再重试 3 次：`LLMError` 带 `status_code`，`with_retry(retriable=is_retriable)` 让 400/401/403/404 这类配置错误一次即止（此前 `runs.attempts` 恒为 3，白等 1s+2s 退避，看起来像"服务不稳定"，其实改一行 `.env` 就能修）；404 的报错文本补一句"可用模型见 `GET {base_url}/models`"，不至于只看到一句 `model not found` 不知道下一步。
+- 本机 `.env` 指向 `qwen2.5:7b` 但 Ollama 上只装了 `qwen2.5:0.5b`：`news_digest` / `repo_report` / `weekly_review` 三个定时任务和全部 4 个 chat agent 一起 404。现改走仓库自带的 `data/eval/llama/llama-server.exe` + `data/eval/models/qwen2.5-1.5b-instruct-q4_k_m.gguf`（对话 :11500），嵌入用 `nomic-embed-text-v1.5`（:11501），三个任务与 `POST /api/v1/chat` 均实跑通过、`runs.attempts=1`。
 - 一键启动不再依赖宿主机已装并启动 Ollama：此前 README 的 `docker compose up -d --build` 只起 app 与监控，容器默认连 `host.docker.internal:11434`，宿主机没起 Ollama（或模型没 pull）时对话直接失败；现在 Ollama 与模型拉取都进了同一个 compose。
 - `extract_json()`：模型在一轮里连吐多个 JSON（例如先 `action` 再 `final_answer`）时，改为取**第一个完整对象**。旧实现把整段拼起来解析，解析失败后原始 JSON 文本被当成最终答案，**工具因此从不被执行**——本机 1.5B 模型实测正是这种输出，修复前 `tools` 完全走不到。
 - 本机目标不再被系统代理劫持：新增 `app/net.py`，LLM / 嵌入 / 能力探测三条出站请求在目标是 `localhost`/回环 IP 时关掉环境代理（`trust_env=False`），指外网时行为不变。修复前 Windows 上开着系统代理（实测注册表 `127.0.0.1:7897`）连本机 Ollama 都会返回 502 空 body，且 Ollama 侧看不到请求。
@@ -36,6 +39,7 @@
 - `tests/test_api.py`：健康检查、`/metrics`（含禁用时 404）、控制台运行记录、`/api/v1/chat`（步骤映射 + 幂等回放不打模型）、任务列表/触发/404、lifespan 启停调度器。
 - `tests/test_resume.py` 改用 fixture 持有 `RunStore`，跑完关闭连接。
 - `tests/test_eval_retrieval.py`：Hit@K 曲线的口径（同一份排序、未召回不计入任何截断点、截断点越大命中率单调不降）。
+- `tests/test_llm_client.py` / `tests/test_retry.py` / `tests/test_config.py` / `tests/test_memory.py`：404 带 `status_code` 且不可重试、5xx/408/409/429/网络错误仍重试、`WARDEN_EMBEDDING_BASE_URL` 的回落与拆分、`EmbeddingClient` 打到独立嵌入端点。
 - 全量：**209 passed / 3 skipped（live）**，覆盖率基线 79% → **95%**。
 
 ### 文档

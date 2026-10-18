@@ -52,7 +52,33 @@ _CAPABILITY_TIMEOUT_S = 10.0
 
 
 class LLMError(Exception):
-    """LLM 调用失败（网络错误 / 4xx / 5xx）。"""
+    """LLM 调用失败（网络错误 / 4xx / 5xx）。
+
+    **重试的是"临时故障"，不是"配置错误"**：模型名写错、密钥无效这类 4xx，
+    再重试 3 次也只会得到同一句 404/401，却白白多花 1s+2s 退避并让
+    runs.attempts 变成 3（看起来像"服务不稳定"，其实配置一步就能修）。
+    所以 4xx 里只保留 408/409/429 值得重试，其余 4xx 一律不重试。
+    """
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+    @property
+    def retriable(self) -> bool:
+        """网络层错误（无状态码）与 5xx / 408 / 409 / 429 可重试；其余 4xx 不可。"""
+        code = self.status_code
+        return code is None or code >= 500 or code in (408, 409, 429)
+
+
+def is_retriable(exc: BaseException) -> bool:
+    """喂给 with_retry(retriable=...) 的判断函数：其余异常维持原来的"全部重试"。"""
+    return getattr(exc, "retriable", True)
+
+
+def _model_hint(base_url: str) -> str:
+    """404 时补一句可执行的排查提示：多半是模型没拉下来，而不是服务挂了。"""
+    return f"（模型可能未安装/名字不对；可用模型见 GET {base_url}/models）"
 
 
 @dataclass
@@ -266,7 +292,10 @@ class LLMClient:
                     key or "-",
                     gateway_headers.get(HEADER_SESSION, "-"),
                 )
-                raise LLMError(f"LLM returned {resp.status_code}: {resp.text[:500]}")
+                raise LLMError(
+                    f"LLM returned {resp.status_code}: {resp.text[:500]}",
+                    status_code=resp.status_code,
+                )
             if kind == TYPE_IDEMPOTENCY_IN_FLIGHT and attempt < max_attempts:
                 delay = _retry_after_s(resp, self._settings.gateway_retry_after_s)
                 logger.warning(
@@ -289,7 +318,11 @@ class LLMClient:
             resp, key=key, session_id=gateway_headers.get(HEADER_SESSION, ""), attempts=attempts
         )
         if resp.status_code != 200:
-            raise LLMError(f"LLM returned {resp.status_code}: {resp.text[:500]}")
+            hint = f" {_model_hint(self._base_url)}" if resp.status_code == 404 else ""
+            raise LLMError(
+                f"LLM returned {resp.status_code}: {resp.text[:500]}{hint}",
+                status_code=resp.status_code,
+            )
         return resp.json()
 
     def _record_gateway(self, resp, *, key: str, session_id: str, attempts: int) -> None:

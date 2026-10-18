@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 
 from ..harness import RunRecord, with_retry
+from ..llm import is_retriable
 from .base import AgentRunResult, AgentStep, BaseAgent
 
 _SYSTEM_TEMPLATE = """\
@@ -57,6 +58,7 @@ class FunctionCallAgent(BaseAgent):
             lambda: self.llm.chat(messages),
             attempts=self.settings.retry_attempts,
             backoff_s=self.settings.retry_backoff_s,
+            retriable=is_retriable,
         )
 
     def _chat_with_tools(self, messages: list[dict]):
@@ -64,6 +66,7 @@ class FunctionCallAgent(BaseAgent):
             lambda: self.llm.chat_with_tools(messages, self._tools_spec()),
             attempts=self.settings.retry_attempts,
             backoff_s=self.settings.retry_backoff_s,
+            retriable=is_retriable,
         )
 
     def _messages(self, history: list[dict]) -> list[dict]:
