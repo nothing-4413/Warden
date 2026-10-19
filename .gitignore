@@ -34,3 +34,7 @@ build/
 .idea/
 .vscode/
 logs/
+
+# 含手机号/邮箱的简历材料：不进公开仓库
+resume_text.txt
+.resume_extract.txt
