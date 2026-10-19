@@ -1,0 +1,25 @@
+# GPU 加速叠加文件（可选）：让 compose 里的 Ollama 用上 NVIDIA 显卡。
+#
+#   cd deploy
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#   # 只重建 Ollama 也可以：
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d ollama
+#
+# 前置条件（缺一样 Ollama 容器就会以 "could not select device driver" 起不来，
+# 这时去掉 -f docker-compose.gpu.yml 即可退回纯 CPU）：
+#   - Windows/macOS：Docker Desktop 的 WSL2 后端 + 宿主机 NVIDIA 驱动
+#   - Linux：NVIDIA 驱动 + nvidia-container-toolkit
+#
+# 验证是否真的用上 GPU：
+#   docker compose exec ollama ollama ps     # PROCESSOR 应该是 100% GPU
+# 本机实测（RTX 4070 Laptop 8GB，qwen2.5:7b Q4_K_M）：eval 13 tok/s → 44 tok/s，
+# prompt eval 16 tok/s → 373 tok/s；news_digest 任务 186s → 约 70s。
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

@@ -6,6 +6,7 @@
 
 ### 新增
 
+- `deploy/docker-compose.gpu.yml`：GPU 加速的叠加文件（`docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`）。默认 compose 保持注释态，没装 `nvidia-container-toolkit` 的机器不会因此起不来；本机实测 `ollama ps` 为 `100% GPU`，qwen2.5:7b Q4_K_M 的 eval 13 → 44 tok/s、prompt eval 16 → 373 tok/s，`news_digest` 任务 186s → 11s（CPU 上该任务会触发一次 120s 超时重试，勉强成功）。
 - `WARDEN_EMBEDDING_BASE_URL`：嵌入请求可以指向和对话不同的端点（留空 = 复用 `llm_base_url`，旧行为不变）。`llama-server` / `vLLM` 这类一实例一模型的后端必须把对话与嵌入拆成两个端口，以前只能靠 `scripts/eval_router.py` 拼一个假网关，现在配置即可。
 - 评测脚本：`scripts/eval_resume.py`（`os._exit` 跨进程硬崩 + `resume` 续跑，统计恢复成功率、重复步骤、崩溃点已落库步数）、`scripts/eval_retrieval.py`（自建中文标注语料，统计 Hit@1/@3/@k 与 MRR，`--compare` 对照「纯向量」与「查询改写 + LLM 重排」）。
 - `eval_retrieval.py --sweep 1,3,4,8`：检索一次、从同一份排序里数出 Hit@K 曲线（各点之间可比，也省掉 K 倍嵌入开销）。本机实测 Hit@1 42.5% / Hit@3 55.0% / Hit@4 65.0% / Hit@8 85.0%，MRR 0.538（k=8）。

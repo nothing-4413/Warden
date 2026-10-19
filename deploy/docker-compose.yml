@@ -35,7 +35,9 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
-    # 有 NVIDIA GPU 时取消注释（Docker Desktop + WSL2 需先装 NVIDIA Container Toolkit）：
+    # GPU 加速走叠加文件（默认注释，避免没装 NVIDIA Container Toolkit 的机器直接起不来）：
+    #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+    # 纯 CPU 也是能跑的，只是 7B 大约 13 tok/s（本项目实测），开 GPU 后 44 tok/s。
     # deploy:
     #   resources:
     #     reservations:
