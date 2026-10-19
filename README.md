@@ -125,6 +125,14 @@ pytest -q
 python -m scripts.smoke
 ```
 
+### 三个定时任务各自吃什么输入
+
+| 任务 | 输入 | 备注 |
+|---|---|---|
+| `news_digest`（每天 08:00） | `.env` 的 `WARDEN_RSS_SOURCES`（默认 HN + arXiv cs.AI） | 按链接去重（`data/news_seen.json`，留最近 500 条），每次最多 30 条新条目进 prompt |
+| `repo_report`（每 24h） | `WARDEN_REPO_PATH` 里的 `*.py` 的 TODO/FIXME/HACK/XXX 行、`pyproject.toml` 依赖、`git log` 近 7 天 | 遍历时就剪掉 `.git` / `.venv` / `node_modules` / `__pycache__`，否则 bind mount 上会扫到分钟级 |
+| `weekly_review`（周一 09:00） | `WARDEN_NOTES_DIR` 里近 7 天改过的 Markdown（**连正文**，单篇 800 字 / 整体 6000 字封顶）、`WARDEN_REPO_PATH` 的 `git log` 近 7 天 | 改笔记正文再跑一次，周报内容会跟着变；笔记留空时就只汇总提交 |
+
 ### Docker（可选，一条命令起全栈）
 
 一条命令起全栈：应用 + 本地 Ollama（含首次模型拉取）+ Prometheus + Grafana。镜像基于 `python:3.14-slim`，以非 root 用户运行，容器内跑 `uvicorn`：
@@ -153,6 +161,7 @@ docker compose ps                      # ollama-pull 显示 Exited (0) 是正常
 - **用远程 LLM / 宿主机的 Ollama**：在 shell 或 `deploy/.env` 里设 `WARDEN_LLM_BASE_URL`（例如 `http://host.docker.internal:11434/v1`），并用 `--no-deps` 跳过 Ollama 容器：`docker compose up -d --build app prometheus grafana --no-deps`。
 - **想换模型**：改 `.env` 里的 `WARDEN_LLM_MODEL` / `WARDEN_EMBEDDING_MODEL`（`app` 与 `ollama-pull` 读同一份 `.env`，自动保持一致；纯 CPU 用小一点的对话模型更快）。**名字必须是 Ollama 标签**（`qwen2.5:1.5b`、`nomic-embed-text`），不能写 GGUF 文件名（`qwen2.5-1.5b-instruct`）——`ollama-pull` 拿同一份 `.env` 去 `ollama pull`，registry 里查不到 manifest 时它会重试 3 次后退出（`Error: pull model manifest: file does not exist`），Ollama 里空着，`app` 就会一直 `model not found`。只想额外预拉模型、不改 app 实际使用哪个模型时，再用 `WARDEN_OLLAMA_MODELS="a,b"` 给列表（写在 shell 或 `deploy/.env`，根目录 `.env` 里的同名项不参与 compose 插值）。拉取失败会重试 3 次，之后可重跑 `docker compose up -d ollama-pull`。
 - **GPU**：用叠加文件开，不动默认 compose：`cd deploy && docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`（Docker Desktop 的 WSL2 后端 + 宿主机 NVIDIA 驱动，Linux 需 `nvidia-container-toolkit`）。装不上 toolkit 时别加 `-f`，退回纯 CPU 也能跑。本机实测（RTX 4070 Laptop 8G，qwen2.5:7b Q4_K_M）：`ollama ps` 显示 `100% GPU`，eval 13 → 44 tok/s、prompt eval 16 → 373 tok/s，`news_digest` 从 186s 降到约 11s（此前 CPU 上这个任务还会触发一次 120s 超时重试）。
+  **重要**：只要有一次 `docker compose up` 没带 `-f docker-compose.gpu.yml`，compose 会认为 `ollama` 配置变了并把它重建成纯 CPU 版（实测掉回 5 tok/s）。想一劳永逸，在 `deploy/.env`（已被 `.gitignore` 忽略）里写 `COMPOSE_FILE=docker-compose.yml;docker-compose.gpu.yml`（Windows 用分号，Linux/macOS 用冒号），之后普通 `docker compose up -d` 也会带上 GPU。
 
 运行时数据落在 `warden-data` / `warden-reports` / `ollama-models` 三个命名卷里；拉模型逻辑在 `deploy/ollama-pull.sh`（`.gitattributes` 强制 shell 脚本走 LF，避免 Windows 上 CRLF 导致容器里 `/bin/sh` 报错）。
 
@@ -182,7 +191,8 @@ curl -X POST http://127.0.0.1:8000/api/v1/chat \
 | `WARDEN_LLM_MODEL` | `qwen2.5:7b` | 对话模型 |
 | `WARDEN_EMBEDDING_MODEL` | `nomic-embed-text` | 嵌入模型（记忆检索用） |
 | `WARDEN_EMBEDDING_BASE_URL` | 空（复用 `llm_base_url`） | 嵌入端点；`llama-server` / vLLM 一个实例只挂一个模型，对话与嵌入要拆两个端口时填（例 `http://127.0.0.1:11501/v1`） |
-| `WARDEN_NOTES_DIR` | 空 | 个人笔记目录（RAG 索引源） |
+| `WARDEN_NOTES_DIR` | 空 | 个人笔记目录（RAG 索引源 + 周报输入；周报会读正文，单篇 800 字 / 整体 6000 字封顶） |
+| `WARDEN_REPO_PATH` | `.` | 代码库报告的扫描根（`weekly_review` 也用它取 `git log`）；compose 里默认是挂进来的 `/repo` |
 | `WARDEN_NOTIFY_KIND` | `console` | 任务通知方式：console / file |
 
 其余开关（重试、超时、告警、查询改写/重排、自反思、自评等）见 `.env.example` 内注释。

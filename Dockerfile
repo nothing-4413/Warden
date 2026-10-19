@@ -10,6 +10,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# git 只为两个任务的「近期提交」用（repo_report / weekly_review 都调 `git log`）；
+# slim 镜像里没有 git，缺了它提交段会静默降级成空。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 # 依赖与代码一起装（个人项目优先简单；改代码重建即可）
 COPY pyproject.toml README.md LICENSE ./
 COPY app ./app

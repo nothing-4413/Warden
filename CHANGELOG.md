@@ -18,6 +18,11 @@
 
 ### 修复
 
+- `weekly_review` 现在读笔记**正文**，不再只列文件名：此前 prompt 里只有 `- a.md（改于 …）`，模型看不到任何内容，只能编一段"本周工作总结"；现在按 mtime 倒序喂正文（单篇 800 字 / 整体 6000 字封顶，超了显式标注"已截断"），改笔记再跑一次周报内容就跟着变。
+- `repo_report` 的扫描改成 `os.walk` 并在遍历阶段剪掉 `.git` / `.venv` / `node_modules` / `__pycache__`：原来是 `rglob("*")` 先遍历再过滤，容器里 `/repo` 是 bind mount，每个 stat 都过 WSL 边界，实测这一个任务要 182s；剪枝后 2.9s 扫完、任务 27s。
+- 两个任务的 `git log` 加 `-c safe.directory=<repo>`：容器里仓库是宿主机 bind mount、uid 不一致，git 会报 `detected dubious ownership` 直接失败，提交段恒为空（加上后容器内能看到 4 条提交）。
+- `Dockerfile` 装 `git`：slim 镜像里没有 git，`repo_report` / `weekly_review` 的"近期提交"会静默降级成空。
+- `deploy/docker-compose.yml` 给 `app` 挂 `../notes:/notes`（只读）与 `..:/repo`（只读），并把 `WARDEN_NOTES_DIR` / `WARDEN_REPO_PATH` 默认指向容器内这两个挂载点；此前容器里 `WARDEN_REPO_PATH=.` 指向镜像内的 `/app`（没有 `.git`、没有 `tests/`），扫描结果和本机对不上。
 - 模型名改用 **Ollama 标签写法**（`qwen2.5:1.5b` / `nomic-embed-text`）：`ollama-pull` 读的是同一份 `.env` 去 `ollama pull`，写成 GGUF 文件名（`qwen2.5-1.5b-instruct`、`nomic-embed-text-v1.5`）时 registry 里没有对应 manifest，一次性容器重试 3 次后退出（`Error: pull model manifest: file does not exist`），Ollama 里一个模型都没有 → compose 的 `app` 三个任务全 404。本地 llama.cpp 用 `--alias` 装成同样的名字，一份 `.env` 两种后端通用。
 - `deploy/docker-compose.yml` 给 `app` 补 `WARDEN_EMBEDDING_BASE_URL` 覆盖：根目录 `.env` 里为宿主机 llama.cpp 写的 `127.0.0.1:11501` 在容器里指向容器自己，会让 `search_notes` / `index-notes` 全部连不上；现在和 `WARDEN_LLM_BASE_URL` 一样默认回落 `http://ollama:11434/v1`。
 - 「模型不存在」不再重试 3 次：`LLMError` 带 `status_code`，`with_retry(retriable=is_retriable)` 让 400/401/403/404 这类配置错误一次即止（此前 `runs.attempts` 恒为 3，白等 1s+2s 退避，看起来像"服务不稳定"，其实改一行 `.env` 就能修）；404 的报错文本补一句"可用模型见 `GET {base_url}/models`"，不至于只看到一句 `model not found` 不知道下一步。

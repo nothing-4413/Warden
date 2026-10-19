@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import tomllib
@@ -24,19 +25,27 @@ class RepoReportTask(BaseTask):
         self._root = Path(repo_path)
 
     def _scan_todos(self) -> list[str]:
+        """遍历仓库里所有 *.py，挑出含 TODO/FIXME/HACK/XXX 的行。
+
+        用 os.walk 而不是 `rglob("*")` 再过滤：rglob 会把 .git / data/ 里的
+        GB 级模型文件和几万个 .git 对象也走一遍（容器里 /repo 还是 bind mount，
+        每个 stat 都要过 WSL 边界），实测能把这一个任务拖到 3 分钟。
+        在遍历阶段就剪掉这些目录，剩下的只有源码。
+        """
         hits: list[str] = []
-        for p in sorted(self._root.rglob("*")):
-            if not p.is_file() or p.suffix not in _SCAN_SUFFIXES:
-                continue
-            if _SKIP_DIRS & set(p.parts):
-                continue
-            try:
-                text = p.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                continue
-            for i, line in enumerate(text.splitlines(), 1):
-                if any(m in line for m in _MARKERS):
-                    hits.append(f"{p}:{i}: {line.strip()}")
+        for dirpath, dirnames, filenames in os.walk(self._root):
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+            for name in sorted(filenames):
+                if not name.endswith(_SCAN_SUFFIXES):
+                    continue
+                p = Path(dirpath) / name
+                try:
+                    text = p.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    continue
+                for i, line in enumerate(text.splitlines(), 1):
+                    if any(m in line for m in _MARKERS):
+                        hits.append(f"{p}:{i}: {line.strip()}")
         return hits
 
     def _declared_deps(self) -> list[str]:
@@ -67,7 +76,16 @@ class RepoReportTask(BaseTask):
     def _recent_commits(self, days: int = 7) -> list[str]:
         try:
             r = subprocess.run(
-                ["git", "log", "--oneline", f"--since={days} days ago"],
+                # safe.directory：容器里仓库是宿主机 bind mount，uid 不一致会让 git
+                # 拒绝执行（detected dubious ownership），提交段于是恒为空。
+                [
+                    "git",
+                    "-c",
+                    f"safe.directory={self._root.resolve()}",
+                    "log",
+                    "--oneline",
+                    f"--since={days} days ago",
+                ],
                 cwd=self._root,
                 capture_output=True,
                 text=True,

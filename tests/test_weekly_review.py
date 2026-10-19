@@ -122,6 +122,45 @@ def test_chinese_commit_message_survives_subprocess_decode(tmp_path, make_task) 
     assert any("feat: 中文提交信息不能丢" in line for line in lines)
 
 
+def test_recent_notes_includes_body_not_just_filename(tmp_path) -> None:
+    """回归：只给文件名时模型只能编，必须把笔记正文带进 prompt。"""
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    _write(notes / "todo.md", "# 本周\n- 修好了嵌入端点拆分\n- 待办：补 GPU 文档")
+
+    listed = WeeklyReviewTask(str(notes), str(tmp_path))._recent_notes()
+
+    assert len(listed) == 1
+    assert "todo.md" in listed[0]
+    assert "修好了嵌入端点拆分" in listed[0]  # 正文进来
+    assert "待办：补 GPU 文档" in listed[0]
+
+
+def test_recent_notes_truncates_long_note(tmp_path) -> None:
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    _write(notes / "long.md", "甲" * 5000)
+
+    listed = WeeklyReviewTask(str(notes), str(tmp_path))._recent_notes(per_note_chars=200)
+
+    assert "已截断" in listed[0]
+    assert len(listed[0]) < 400  # 单篇封顶生效，不会把 5000 字全塞进去
+
+
+def test_recent_notes_newest_first_and_total_cap(tmp_path) -> None:
+    """总量封顶时优先保留最近改的笔记（否则周报看到的是最旧的那批）。"""
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    _write(notes / "old.md", "旧" * 300, age_days=3)
+    _write(notes / "new.md", "新" * 300, age_days=0)
+
+    task = WeeklyReviewTask(str(notes), str(tmp_path))
+    all_notes = task._recent_notes()
+    assert all_notes[0].startswith("### new.md")  # 最近的排最前
+    capped = task._recent_notes(total_chars=400)
+    assert len(capped) == 1 and "new.md" in capped[0]
+
+
 def test_run_reports_counts_and_prompt(tmp_path) -> None:
     notes = tmp_path / "notes"
     notes.mkdir()
@@ -143,6 +182,7 @@ def test_run_reports_counts_and_prompt(tmp_path) -> None:
     system, user = llm.prompts[0]
     assert system["role"] == "system" and "个人复盘助手" in system["content"]
     assert "## 本周笔记" in user["content"] and "today.md" in user["content"]
+    assert "今天做的事" in user["content"]  # 正文确实进了 prompt
     assert "## 本周提交" in user["content"] and "feat: 提交一" in user["content"]
 
 
@@ -157,3 +197,23 @@ def test_prompt_truncates_commit_list_to_fifty(tmp_path) -> None:
     commits = [f"c{i}" for i in range(60)]
     user = task._prompt([], commits)[1]["content"]
     assert "c49" in user and "c50" not in user
+
+
+def test_repo_scan_prunes_heavy_dirs(tmp_path) -> None:
+    """回归：扫代码库时不进 .git / .venv / node_modules / __pycache__。
+
+    用 rglob("*") 时这些目录里的每个文件都要 stat 一遍——容器里 /repo 是
+    bind mount，实测会把 repo_report 从十几秒拖到 3 分钟。
+    """
+    repo = tmp_path / "repo"
+    (repo / "app").mkdir(parents=True)
+    (repo / "app" / "core.py").write_text("# TODO: real\n", encoding="utf-8")
+    for heavy in (".git", ".venv", "node_modules", "__pycache__"):
+        d = repo / heavy
+        d.mkdir()
+        (d / "noise.py").write_text("# TODO: 不该被扫到\n", encoding="utf-8")
+
+    hits = RepoReportTask(str(repo))._scan_todos()
+
+    assert len(hits) == 1 and "real" in hits[0]
+    assert all("noise.py" not in hit for hit in hits)

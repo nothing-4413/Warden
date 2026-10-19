@@ -92,6 +92,10 @@ services:
       # 嵌入也必须指回 ollama：根目录 .env 里为「宿主机 llama.cpp」写的是 127.0.0.1:11501，
       # 在容器里那是容器自己，直接复制过去会让 search_notes / index-notes 全部连不上。
       WARDEN_EMBEDDING_BASE_URL: ${WARDEN_EMBEDDING_BASE_URL:-http://ollama:11434/v1}
+      # 笔记与仓库默认指向下面挂进容器的两个只读挂载点（根目录 .env 里的宿主机路径
+      # 在容器里不存在，所以这里用 ${...:-默认值} 兜底；要用别的目录就 deploy/.env 覆盖）
+      WARDEN_NOTES_DIR: ${WARDEN_NOTES_DIR:-/notes}
+      WARDEN_REPO_PATH: ${WARDEN_REPO_PATH:-/repo}
       WARDEN_API_HOST: 0.0.0.0
     depends_on:
       ollama:
@@ -102,8 +106,11 @@ services:
     volumes:
       - warden-data:/app/data
       - warden-reports:/app/reports
-      # 想让容器索引本机笔记时，挂进来并把 WARDEN_NOTES_DIR 指向容器内路径：
-      # - C:/notes:/notes:ro
+      # 周报读宿主机真实笔记（默认挂仓库里的 notes/；换成你的笔记目录就改左边）：
+      - ../notes:/notes:ro
+      # 代码库报告扫真实仓库：镜像里那份 /app 没有 .git，扫不出「近期提交」，
+      # 也只含 app/ 源码。挂整个仓库进来（只读）才能覆盖 tests/scripts/ 与提交历史。
+      - ..:/repo:ro
 
   prometheus:
     image: prom/prometheus:latest
