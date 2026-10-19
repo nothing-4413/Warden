@@ -86,10 +86,41 @@ def test_news_digest_ok_then_skipped(monkeypatch, tmp_path):
     r1 = task.run(ctx)
     assert r1.status == "ok"
     assert r1.detail["new"] == 2
+    assert r1.detail["sources"] == {"http://x/rss": 2}
 
     r2 = task.run(ctx)  # 已见链接 → 跳过
     assert r2.status == "skipped"
     assert r2.detail["new"] == 0
+
+
+def test_news_digest_reports_empty_source(monkeypatch, tmp_path):
+    """某个源这次 0 条（arXiv 周末不更新就是）要在 summary/detail 里说出来，
+    否则只看到一句「没有新条目」，分不清是没更新还是抓取坏了。"""
+
+    class EmptyFeedClient(FakeClient):
+        def get(self, url):
+            return FakeResponse("<rss version='2.0'><channel><title>t</title></channel></rss>")
+
+    monkeypatch.setattr(news_digest.httpx, "Client", EmptyFeedClient)
+    task = NewsDigestTask(["http://empty/rss"], str(tmp_path))
+
+    r = task.run(_ctx())
+
+    assert r.status == "skipped"
+    assert r.detail["sources"] == {"http://empty/rss": 0}
+    assert "没返回条目" in r.summary
+
+
+def test_news_seen_keeps_insertion_order_and_caps(monkeypatch, tmp_path):
+    """已见列表按写入顺序保存：封顶时丢最旧的那批，不会把老链接放回来当新闻。"""
+    task = NewsDigestTask(["http://x/rss"], str(tmp_path))
+    task._save_seen([f"http://a/{i}" for i in range(news_digest._MAX_SEEN + 5)])
+
+    seen = task._load_seen()
+
+    assert len(seen) == news_digest._MAX_SEEN
+    assert seen[0] == "http://a/5"  # 最旧的 5 条被丢掉
+    assert seen[-1] == f"http://a/{news_digest._MAX_SEEN + 4}"
 
 
 def test_repo_report_ok(monkeypatch):

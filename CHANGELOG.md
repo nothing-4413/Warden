@@ -18,6 +18,8 @@
 
 ### 修复
 
+- `news_digest` 的「没有新条目」现在可解释：`_fetch_all()` 额外返回每个源解析出多少条，`skipped` 的 `detail.sources` 会写明（本机实测 HN 30 条全见过 + `export.arxiv.org/rss/cs.AI` 0 条，因为 arXiv 周末不更新），summary 也会提示"N 个源这次没返回条目"。
+- 已见链接从 `set` 改成有序 `list`（先进先出，封顶仍 500）：原来 `list(set)[-500:]` 砍掉的是迭代顺序里的随机一条，被丢掉的老链接下次会被当成新条目重新播报。
 - `weekly_review` 现在读笔记**正文**，不再只列文件名：此前 prompt 里只有 `- a.md（改于 …）`，模型看不到任何内容，只能编一段"本周工作总结"；现在按 mtime 倒序喂正文（单篇 800 字 / 整体 6000 字封顶，超了显式标注"已截断"），改笔记再跑一次周报内容就跟着变。
 - `repo_report` 的扫描改成 `os.walk` 并在遍历阶段剪掉 `.git` / `.venv` / `node_modules` / `__pycache__`：原来是 `rglob("*")` 先遍历再过滤，容器里 `/repo` 是 bind mount，每个 stat 都过 WSL 边界，实测这一个任务要 182s；剪枝后 2.9s 扫完、任务 27s。
 - 两个任务的 `git log` 加 `-c safe.directory=<repo>`：容器里仓库是宿主机 bind mount、uid 不一致，git 会报 `detected dubious ownership` 直接失败，提交段恒为空（加上后容器内能看到 4 条提交）。

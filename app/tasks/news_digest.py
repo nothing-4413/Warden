@@ -76,47 +76,70 @@ class NewsDigestTask(BaseTask):
         self._sources = rss_sources
         self._seen_path = Path(data_dir) / "news_seen.json"
 
-    def _load_seen(self) -> set[str]:
-        try:
-            return set(json.loads(self._seen_path.read_text(encoding="utf-8")))
-        except (OSError, json.JSONDecodeError):
-            return set()
+    def _load_seen(self) -> list[str]:
+        """已见链接，按写入顺序（旧的在前）。
 
-    def _save_seen(self, seen: set[str]) -> None:
+        存 list 而不是 set：封顶时丢的是最旧的链接，而不是 set 迭代顺序里
+        随机某个——否则被丢掉的老链接下次会重新算"新条目"，冒出早已看过的新闻。
+        """
+        try:
+            data = json.loads(self._seen_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        if not isinstance(data, list):
+            return []
+        return [x for x in data if isinstance(x, str)]
+
+    def _save_seen(self, seen: list[str]) -> None:
         self._seen_path.parent.mkdir(parents=True, exist_ok=True)
         self._seen_path.write_text(
-            json.dumps(list(seen)[-_MAX_SEEN:], ensure_ascii=False), encoding="utf-8"
+            json.dumps(seen[-_MAX_SEEN:], ensure_ascii=False), encoding="utf-8"
         )
 
-    def _fetch_all(self) -> tuple[list[FeedItem], list[str]]:
+    def _fetch_all(self) -> tuple[list[FeedItem], list[str], dict[str, int]]:
+        """抓所有源；返回 (条目, 错误, 每个源解析出的条数)。
+
+        第三个返回值是为了让"没有新条目"可解释：到底是一个源空着
+        （arXiv 周末不更新就是 0 条），还是所有源都抓到了但全见过。
+        """
         items: list[FeedItem] = []
         errors: list[str] = []
+        per_source: dict[str, int] = {}
         with httpx.Client(timeout=15.0, follow_redirects=True) as client:
             for src in self._sources:
                 try:
                     resp = client.get(src)
                     resp.raise_for_status()
-                    items.extend(parse_feed(resp.text))
+                    parsed = parse_feed(resp.text)
+                    per_source[src] = len(parsed)
+                    items.extend(parsed)
                 except Exception as exc:  # 单个源失败不拖垮整体
+                    per_source[src] = 0
                     errors.append(f"{src}: {exc}")
-        return items, errors
+        return items, errors, per_source
 
     def run(self, ctx: Services) -> TaskResult:
-        items, errors = self._fetch_all()
+        items, errors, per_source = self._fetch_all()
         seen = self._load_seen()
-        fresh = [i for i in items if i.link not in seen]
+        seen_set = set(seen)
+        fresh = [i for i in items if i.link not in seen_set]
+        base = {"total": len(items), "sources": per_source}
         if not fresh:
             if errors:
-                return TaskResult(self.name, "error", "抓取失败", {"errors": errors})
-            return TaskResult(self.name, "skipped", "没有新条目", {"total": len(items), "new": 0})
+                return TaskResult(self.name, "error", "抓取失败", {**base, "errors": errors})
+            empty = [src for src, n in per_source.items() if n == 0]
+            summary = "没有新条目"
+            if empty:
+                summary += f"（{len(empty)} 个源这次没返回条目）"
+            return TaskResult(self.name, "skipped", summary, {**base, "new": 0})
 
         digest = ctx.llm.chat(self._prompt(fresh))
-        self._save_seen(seen | {i.link for i in fresh})
+        self._save_seen(seen + [i.link for i in fresh])
         return TaskResult(
             self.name,
             "ok",
             digest,
-            {"total": len(items), "new": len(fresh), "errors": errors},
+            {**base, "new": len(fresh), "errors": errors},
         )
 
     def _prompt(self, items: list[FeedItem]) -> list[dict]:

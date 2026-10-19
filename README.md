@@ -129,7 +129,7 @@ python -m scripts.smoke
 
 | 任务 | 输入 | 备注 |
 |---|---|---|
-| `news_digest`（每天 08:00） | `.env` 的 `WARDEN_RSS_SOURCES`（默认 HN + arXiv cs.AI） | 按链接去重（`data/news_seen.json`，留最近 500 条），每次最多 30 条新条目进 prompt |
+| `news_digest`（每天 08:00） | `.env` 的 `WARDEN_RSS_SOURCES`（默认 HN + arXiv cs.AI） | 按链接去重（`data/news_seen.json`，留最近 500 条，先进先出），每次最多 30 条新条目进 prompt；`skipped` 时 `detail.sources` 会给出每个源这次抓到几条（arXiv 周末不更新就是 0 条），想让同一批条目再出一次简报就删掉 `data/news_seen.json` |
 | `repo_report`（每 24h） | `WARDEN_REPO_PATH` 里的 `*.py` 的 TODO/FIXME/HACK/XXX 行、`pyproject.toml` 依赖、`git log` 近 7 天 | 遍历时就剪掉 `.git` / `.venv` / `node_modules` / `__pycache__`，否则 bind mount 上会扫到分钟级 |
 | `weekly_review`（周一 09:00） | `WARDEN_NOTES_DIR` 里近 7 天改过的 Markdown（**连正文**，单篇 800 字 / 整体 6000 字封顶）、`WARDEN_REPO_PATH` 的 `git log` 近 7 天 | 改笔记正文再跑一次，周报内容会跟着变；笔记留空时就只汇总提交 |
 
